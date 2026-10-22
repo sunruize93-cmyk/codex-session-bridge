@@ -1,0 +1,31 @@
+{
+  "name": "codex-session-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "小红书与微信的本地会话操作插件",
+  "engines": {
+    "node": ">=22.22.0 <23 || >=24.0.0 <25"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "tsc --noEmit",
+    "test": "node --test --import tsx tests/*.test.ts",
+    "doctor": "node server/dist/cli.js doctor",
+    "package": "node scripts/package.mjs"
+  },
+  "dependencies": {
+    "@jackwener/opencli": "2.0.2",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.7",
+    "esbuild": "0.28.2",
+    "tsx": "4.21.0",
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "esbuild": "0.28.2"
+  }
+}
