@@ -17,7 +17,9 @@ const commit = z
 const chat = ref;
 const note = z.string().regex(/^[a-f0-9]{24}$/);
 export const schemas: Record<string, z.ZodTypeAny> = {
-  bridge_doctor: z.object({}).strict(),
+  bridge_doctor: z
+    .object({ channel: z.enum(['xiaohongshu_web', 'wechat_macos']).optional() })
+    .strict(),
   bridge_bind: z
     .object({
       channel: z.enum(['xiaohongshu_web', 'wechat_macos']),
@@ -91,7 +93,7 @@ export const schemas: Record<string, z.ZodTypeAny> = {
   wechat_send_message: commit,
 };
 export const descriptions: Record<string, string> = {
-  bridge_doctor: '检查本机环境、桥接和权限；不登录、不打开新页面。',
+  bridge_doctor: '默认只检查浏览器；仅显式指定 channel:wechat_macos 才检查微信。',
   bridge_bind: '绑定用户当前选择的已有 Chrome 页或微信窗口；先检查 doctor。',
   bridge_inspect_session: '核对已有绑定的目标与账号证据。',
   bridge_unbind: '解除绑定，保留用户窗口。',

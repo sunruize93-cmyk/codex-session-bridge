@@ -117,7 +117,9 @@ var Coordinator = class {
         platform: process.platform,
         node: process.version,
         write_mode: this.store.get("config", "write")?.enabled ? "trusted-host" : "disabled",
-        adapters: await Promise.all(Object.values(this.adapters).map((x) => x.doctor())),
+        adapters: await Promise.all(
+          Object.entries(this.adapters).filter(([channel]) => a.channel ? channel === a.channel : channel !== "wechat_macos").map(([, adapter]) => adapter.doctor())
+        ),
         pending: this.queue.pending
       };
     if (tool === "bridge_bind")
@@ -1297,7 +1299,7 @@ var commit = z.object({ ...task, operation_id: ref, payload_version: z.number().
 var chat = ref;
 var note = z.string().regex(/^[a-f0-9]{24}$/);
 var schemas = {
-  bridge_doctor: z.object({}).strict(),
+  bridge_doctor: z.object({ channel: z.enum(["xiaohongshu_web", "wechat_macos"]).optional() }).strict(),
   bridge_bind: z.object({
     channel: z.enum(["xiaohongshu_web", "wechat_macos"]),
     profile: ref.optional(),

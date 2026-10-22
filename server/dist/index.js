@@ -20,7 +20,7 @@ var commit = z.object({ ...task, operation_id: ref, payload_version: z.number().
 var chat = ref;
 var note = z.string().regex(/^[a-f0-9]{24}$/);
 var schemas = {
-  bridge_doctor: z.object({}).strict(),
+  bridge_doctor: z.object({ channel: z.enum(["xiaohongshu_web", "wechat_macos"]).optional() }).strict(),
   bridge_bind: z.object({
     channel: z.enum(["xiaohongshu_web", "wechat_macos"]),
     profile: ref.optional(),
@@ -71,7 +71,7 @@ var schemas = {
   wechat_send_message: commit
 };
 var descriptions = {
-  bridge_doctor: "\u68C0\u67E5\u672C\u673A\u73AF\u5883\u3001\u6865\u63A5\u548C\u6743\u9650\uFF1B\u4E0D\u767B\u5F55\u3001\u4E0D\u6253\u5F00\u65B0\u9875\u9762\u3002",
+  bridge_doctor: "\u9ED8\u8BA4\u53EA\u68C0\u67E5\u6D4F\u89C8\u5668\uFF1B\u4EC5\u663E\u5F0F\u6307\u5B9A channel:wechat_macos \u624D\u68C0\u67E5\u5FAE\u4FE1\u3002",
   bridge_bind: "\u7ED1\u5B9A\u7528\u6237\u5F53\u524D\u9009\u62E9\u7684\u5DF2\u6709 Chrome \u9875\u6216\u5FAE\u4FE1\u7A97\u53E3\uFF1B\u5148\u68C0\u67E5 doctor\u3002",
   bridge_inspect_session: "\u6838\u5BF9\u5DF2\u6709\u7ED1\u5B9A\u7684\u76EE\u6807\u4E0E\u8D26\u53F7\u8BC1\u636E\u3002",
   bridge_unbind: "\u89E3\u9664\u7ED1\u5B9A\uFF0C\u4FDD\u7559\u7528\u6237\u7A97\u53E3\u3002",
