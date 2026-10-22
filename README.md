@@ -6,8 +6,9 @@
 
 - P0：18 个工具的 MCP 服务、Unix socket 单协调进程、OS 锁、持久任务、搜索/有限读取适配、暂停/恢复/取消与 doctor。
 - P1：图文/评论/微信文字草稿、宿主授权范围、提交账本、防重复发出与条件式结果核对。平台控件或稳定身份缺失时拒绝提交；实际发送、发布、评论均未验证。
-- Codex：MCP 已注册；新 Codex CLI 会话真实调用过 bridge_doctor；本地插件源已注册且 CLI 已安装。当前聊天需重新开始才加载新工具。
-- 本机：macOS 26.5.2 arm64，微信运行；Python 工作者 AX 权限未授权；Chrome/扩展未连接。真实账号功能任务数为 **0**。
+- Codex：MCP、本地插件已安装；当前桌面聊天已真实加载并调用插件工具。
+- 本机：Chrome 156.0.8078.48、OpenCLI 2.0.2、Browser Bridge 1.0.26 已连接；小红书正式工具完成 3 条搜索结果和 1 篇正文读取。
+- 微信：系统权限已生效，但实际客户端曾仅暴露窗口外框，并再次显示安全重登提示；消息读取尚未通过。默认 doctor 现在只查元数据，不访问微信 AX 树。**微信原问题尚未证明解决**，详见[重登诊断](docs/wechat-session-diagnosis.md)。
 
 完整证据：[验证报告](docs/validation-report.md)、[兼容性](docs/compatibility.md)、[对抗审查](docs/review-report.md)。不承诺免验证、永久在线或平台端 exactly-once。
 
@@ -38,11 +39,11 @@ codex plugin add codex-session-bridge@session-bridge-local
 
 ## 首次连接
 
-1. 小红书：安装本地 Chrome 和上游官方 Browser Bridge **1.0.26**，在你选择的 profile 正常登录一次。运行 `node scripts/connect-browser.mjs` 启动未运行的本地桥接，再用 doctor 检查扩展。已运行时不会重启桥接。官方扩展包可用 `node scripts/fetch-extension.mjs` 下载并验证摘要，解压后在 Chrome 的扩展开发者模式中手动加载。插件的 doctor 只观察，不自动启动 Chrome 或登录。
+1. 小红书：安装本地 Chrome 和上游官方 Browser Bridge **1.0.26**，在你选择的 profile 正常登录一次。运行 `node scripts/connect-browser.mjs` 启动未运行的本地桥接，再用 doctor 检查扩展。已运行时不会重启桥接。官方扩展包可用 `node scripts/fetch-extension.mjs` 下载并验证摘要，解压后在 Chrome 的扩展开发者模式中手动加载 **manifest.json 所在的子文件夹**。选择上一级目录会报“清单文件缺失”。插件的 doctor 只观察，不自动启动 Chrome 或登录。
 2. 微信：系统设置 → 隐私与安全性 → 辅助功能，允许实际工作进程使用 AX。`bridge_doctor` 返回 `worker_executable`，应核对它，而不是仅凭终端已授权推定可用。当前实现不截图，屏幕录制权限不是读取成功证据。
 3. 新 Codex 会话中说：“用会话桥检查环境，绑定我当前选择的小红书标签页/微信窗口。”账号读不出来时，可明确绑定当前窗口为 user_bound，只读和草稿能力仍取决于控件；发送还要求稳定账号与接收者证据。
 
-微信当前客户端能否提供稳定身份、编辑器和消息 ID 尚待实机检查，授权 AX 后也可能仍受限。小红书 AI 布局及创作中心也未做实机验收。
+微信当前版本没有通过消息控件与稳定身份验收，给予 AX 权限不等于可用；安全重登时停止操作。小红书新版搜索框、双重编码路由、同一卡片的封面/标题链接已适配并做一次实机只读验收；创作中心和实际写入仍未验收。
 
 ## 操作示例
 
