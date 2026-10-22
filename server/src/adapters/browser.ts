@@ -66,13 +66,15 @@ export class BrowserAdapter implements Adapter {
     }
     if (!r.ok) {
       const code = String(r.errorCode ?? '');
-      throw new BridgeError(
+      const error = new BridgeError(
         /tab_gone|target_closed|bound_tab_closed/.test(code)
           ? 'TARGET_CLOSED'
           : /profile|extension|command_lost|command_result_unknown/.test(code)
             ? 'BRIDGE_DISCONNECTED'
             : 'UI_CHANGED',
       );
+      if (/^[a-z0-9_]{1,100}$/i.test(code)) error.backend_code = code;
+      throw error;
     }
     return r;
   }

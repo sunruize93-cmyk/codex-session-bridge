@@ -39,7 +39,7 @@ export async function instagramProgram(p: any): Promise<any> {
     const parsePost = (raw: string) => {
       try {
         const u = new URL(raw, location.href);
-        const m = u.pathname.match(/^\/(p|reel)\/([A-Za-z0-9_-]{1,64})\/$/);
+        const m = u.pathname.match(/^\/(?:[A-Za-z0-9._]+\/)?(p|reel)\/([A-Za-z0-9_-]{1,64})\/$/);
         if (!origins.includes(u.origin) || u.username || u.password || !m) return undefined;
         return {
           shortcode: m[2],
@@ -151,109 +151,46 @@ export async function instagramProgram(p: any): Promise<any> {
         ];
       });
     };
-    const searchFields = () =>
-      list(
-        'input[aria-label="搜索输入"], input[aria-label="Search input"], input[placeholder="搜索"], input[placeholder="Search"]',
-      ) as HTMLInputElement[];
     if (p.action === 'search_start') {
       if (typeof p.request_id !== 'string' || !p.request_id) throw new Error('UI_CHANGED');
-      const fields = searchFields();
-      if (!fields.length) {
-        if (state.openingSearch !== p.request_id) {
-          const links = list('a[href]').filter((a) => {
-            try {
-              const u = new URL(a.getAttribute('href') || '', location.href);
-              return (
-                origins.includes(u.origin) &&
-                u.pathname === '/explore/' &&
-                /^(搜索|Search)$/.test(text(a))
-              );
-            } catch {
-              return false;
-            }
-          });
-          if (links.length !== 1) throw new Error('UI_CHANGED');
-          guard();
-          state.openingSearch = p.request_id;
-          links[0].click();
-        }
-        return { pending: true };
-      }
-      if (fields.length !== 1 || fields[0].disabled || fields[0].readOnly)
-        throw new Error('UI_CHANGED');
-      const field = fields[0];
-      const buttons = list('button,[role="button"]', field.parentElement!).filter(
-        (b) =>
-          /^(搜索|Search)$/.test(text(b)) ||
-          !!b.querySelector('svg[aria-label="搜索"],svg[aria-label="Search"]'),
-      );
-      if (buttons.length !== 1) throw new Error('UI_CHANGED');
-      const query = String(p.query);
-      if (
-        state.search?.request_id === p.request_id &&
-        state.search.submitted &&
-        state.search.query === query &&
-        field.value === query
-      )
-        return { submitted: true };
-      state.search = {
+      const url = new URL('/explore/search/keyword/', location.origin);
+      url.searchParams.set('q', p.query);
+      return {
+        navigation_url: url.href,
         request_id: p.request_id,
-        query,
-        old: JSON.stringify(cards().map((c) => c.post_url)),
-        submitted: false,
+        query: p.query,
+        previous_document: state.document,
+        baseline_urls: cards().map((c) => c.post_url),
       };
-      guard();
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field, query);
-      field.dispatchEvent(new Event('input', { bubbles: true }));
-      field.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      guard();
-      const freshFields = searchFields();
-      if (
-        freshFields.length !== 1 ||
-        freshFields[0] !== field ||
-        field.disabled ||
-        field.readOnly ||
-        !field.isConnected ||
-        field.value !== query
-      )
-        throw new Error('UI_CHANGED');
-      state.search.submitted = true;
-      field.dispatchEvent(
-        new KeyboardEvent('keydown', {
-          key: 'Enter',
-          code: 'Enter',
-          keyCode: 13,
-          which: 13,
-          bubbles: true,
-        }),
-      );
-      field.dispatchEvent(
-        new KeyboardEvent('keyup', {
-          key: 'Enter',
-          code: 'Enter',
-          keyCode: 13,
-          which: 13,
-          bubbles: true,
-        }),
-      );
-      return { submitted: true };
     }
     if (p.action === 'search_result') {
-      const fields = searchFields();
-      if (
-        !state.search ||
-        state.search.request_id !== p.request_id ||
-        state.search.query !== p.query ||
-        fields.length !== 1 ||
-        fields[0].value !== p.query
-      )
+      if (p.snapshot?.request_id !== p.request_id || p.snapshot?.query !== p.query)
         throw new Error('UI_CHANGED');
       const url = new URL(location.href);
       if (url.pathname !== '/explore/search/keyword/' || url.searchParams.get('q') !== p.query)
         return { pending: true };
+      const roots = list('main,[role="main"]');
+      if (!roots.length) return { pending: true };
+      if (roots.length !== 1) throw new Error('UI_CHANGED');
+      const root = roots[0];
+      const normalize = (s: string) => s.normalize('NFKC').trim().toLocaleLowerCase();
+      const anchors = list('a[href]', root).filter((a) => parsePost(a.getAttribute('href') || ''));
+      const labels = list('h1,h2,[role="heading"],span[dir="auto"]', root).filter(
+        (e) =>
+          !e.children.length &&
+          !e.closest('a,article') &&
+          normalize(renderedText(e)) === normalize(p.query) &&
+          (!anchors.length ||
+            !!(e.compareDocumentPosition(anchors[0]) & Node.DOCUMENT_POSITION_FOLLOWING)),
+      );
+      if (labels.length !== 1) return { pending: true };
       const results = cards();
-      if (!results.length || JSON.stringify(results.map((c) => c.post_url)) === state.search.old)
+      if (
+        !results.length ||
+        (state.document === p.snapshot.previous_document &&
+          JSON.stringify(results.map((c) => c.post_url)) ===
+            JSON.stringify(p.snapshot.baseline_urls))
+      )
         return { pending: true };
       return {
         query: p.query,

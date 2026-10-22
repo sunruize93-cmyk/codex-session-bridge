@@ -13,6 +13,7 @@ var BridgeError = class extends Error {
   }
   code;
   detail;
+  backend_code;
 };
 
 // server/src/store.ts

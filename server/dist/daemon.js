@@ -25,6 +25,7 @@ var BridgeError = class extends Error {
   }
   code;
   detail;
+  backend_code;
 };
 var browserOrigins = {
   xiaohongshu_web: ["https://www.xiaohongshu.com", "https://creator.xiaohongshu.com"],
@@ -421,7 +422,11 @@ var Coordinator = class {
           t.status = "NEEDS_REBIND";
           b.state = "NEEDS_REBIND";
         } else t.status = "FAILED";
-        t.error = { code: unknown ? "OUTCOME_UNKNOWN" : code, retryable: false };
+        t.error = {
+          code: unknown ? "OUTCOME_UNKNOWN" : code,
+          retryable: false,
+          ...e instanceof BridgeError && e.backend_code ? { backend_code: e.backend_code } : {}
+        };
         this.store.put("binding", b);
         this.save(t);
       }
@@ -947,9 +952,11 @@ var BrowserAdapter = class {
     }
     if (!r.ok) {
       const code = String(r.errorCode ?? "");
-      throw new BridgeError(
+      const error = new BridgeError(
         /tab_gone|target_closed|bound_tab_closed/.test(code) ? "TARGET_CLOSED" : /profile|extension|command_lost|command_result_unknown/.test(code) ? "BRIDGE_DISCONNECTED" : "UI_CHANGED"
       );
+      if (/^[a-z0-9_]{1,100}$/i.test(code)) error.backend_code = code;
+      throw error;
     }
     return r;
   }
@@ -1325,7 +1332,7 @@ async function instagramProgram(p) {
     const parsePost = (raw2) => {
       try {
         const u = new URL(raw2, location.href);
-        const m = u.pathname.match(/^\/(p|reel)\/([A-Za-z0-9_-]{1,64})\/$/);
+        const m = u.pathname.match(/^\/(?:[A-Za-z0-9._]+\/)?(p|reel)\/([A-Za-z0-9_-]{1,64})\/$/);
         if (!origins.includes(u.origin) || u.username || u.password || !m) return void 0;
         return {
           shortcode: m[2],
@@ -1416,84 +1423,36 @@ async function instagramProgram(p) {
         ];
       });
     };
-    const searchFields = () => list(
-      'input[aria-label="\u641C\u7D22\u8F93\u5165"], input[aria-label="Search input"], input[placeholder="\u641C\u7D22"], input[placeholder="Search"]'
-    );
     if (p.action === "search_start") {
       if (typeof p.request_id !== "string" || !p.request_id) throw new Error("UI_CHANGED");
-      const fields = searchFields();
-      if (!fields.length) {
-        if (state.openingSearch !== p.request_id) {
-          const links = list("a[href]").filter((a) => {
-            try {
-              const u = new URL(a.getAttribute("href") || "", location.href);
-              return origins.includes(u.origin) && u.pathname === "/explore/" && /^(搜索|Search)$/.test(text2(a));
-            } catch {
-              return false;
-            }
-          });
-          if (links.length !== 1) throw new Error("UI_CHANGED");
-          guard();
-          state.openingSearch = p.request_id;
-          links[0].click();
-        }
-        return { pending: true };
-      }
-      if (fields.length !== 1 || fields[0].disabled || fields[0].readOnly)
-        throw new Error("UI_CHANGED");
-      const field = fields[0];
-      const buttons = list('button,[role="button"]', field.parentElement).filter(
-        (b) => /^(搜索|Search)$/.test(text2(b)) || !!b.querySelector('svg[aria-label="\u641C\u7D22"],svg[aria-label="Search"]')
-      );
-      if (buttons.length !== 1) throw new Error("UI_CHANGED");
-      const query = String(p.query);
-      if (state.search?.request_id === p.request_id && state.search.submitted && state.search.query === query && field.value === query)
-        return { submitted: true };
-      state.search = {
+      const url = new URL("/explore/search/keyword/", location.origin);
+      url.searchParams.set("q", p.query);
+      return {
+        navigation_url: url.href,
         request_id: p.request_id,
-        query,
-        old: JSON.stringify(cards().map((c) => c.post_url)),
-        submitted: false
+        query: p.query,
+        previous_document: state.document,
+        baseline_urls: cards().map((c) => c.post_url)
       };
-      guard();
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(field, query);
-      field.dispatchEvent(new Event("input", { bubbles: true }));
-      field.dispatchEvent(new Event("change", { bubbles: true }));
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      guard();
-      const freshFields = searchFields();
-      if (freshFields.length !== 1 || freshFields[0] !== field || field.disabled || field.readOnly || !field.isConnected || field.value !== query)
-        throw new Error("UI_CHANGED");
-      state.search.submitted = true;
-      field.dispatchEvent(
-        new KeyboardEvent("keydown", {
-          key: "Enter",
-          code: "Enter",
-          keyCode: 13,
-          which: 13,
-          bubbles: true
-        })
-      );
-      field.dispatchEvent(
-        new KeyboardEvent("keyup", {
-          key: "Enter",
-          code: "Enter",
-          keyCode: 13,
-          which: 13,
-          bubbles: true
-        })
-      );
-      return { submitted: true };
     }
     if (p.action === "search_result") {
-      const fields = searchFields();
-      if (!state.search || state.search.request_id !== p.request_id || state.search.query !== p.query || fields.length !== 1 || fields[0].value !== p.query)
+      if (p.snapshot?.request_id !== p.request_id || p.snapshot?.query !== p.query)
         throw new Error("UI_CHANGED");
       const url = new URL(location.href);
       if (url.pathname !== "/explore/search/keyword/" || url.searchParams.get("q") !== p.query)
         return { pending: true };
+      const roots = list('main,[role="main"]');
+      if (!roots.length) return { pending: true };
+      if (roots.length !== 1) throw new Error("UI_CHANGED");
+      const root2 = roots[0];
+      const normalize = (s) => s.normalize("NFKC").trim().toLocaleLowerCase();
+      const anchors = list("a[href]", root2).filter((a) => parsePost(a.getAttribute("href") || ""));
+      const labels = list('h1,h2,[role="heading"],span[dir="auto"]', root2).filter(
+        (e) => !e.children.length && !e.closest("a,article") && normalize(renderedText(e)) === normalize(p.query) && (!anchors.length || !!(e.compareDocumentPosition(anchors[0]) & Node.DOCUMENT_POSITION_FOLLOWING))
+      );
+      if (labels.length !== 1) return { pending: true };
       const results = cards();
-      if (!results.length || JSON.stringify(results.map((c) => c.post_url)) === state.search.old)
+      if (!results.length || state.document === p.snapshot.previous_document && JSON.stringify(results.map((c) => c.post_url)) === JSON.stringify(p.snapshot.baseline_urls))
         return { pending: true };
       return {
         query: p.query,
@@ -1565,22 +1524,42 @@ var InstagramAdapter = class extends BrowserAdapter {
     if (b.channel !== "instagram_web") throw new BridgeError("CHANNEL_MISMATCH");
     check();
     if (tool === "ig_search") {
-      await this.poll(
-        b,
-        { action: "search_start", query: a.query, request_id: a.client_request_id },
-        check
-      );
-      checkpoint("instagram_search_submitted");
-      return this.poll(
+      const snapshot = await this.program(b, {
+        action: "search_start",
+        query: a.query,
+        request_id: a.client_request_id
+      });
+      const url = new URL(snapshot.navigation_url);
+      checkpoint("instagram_search_snapshot_ready");
+      if (!["https://www.instagram.com", "https://instagram.com"].includes(url.origin) || url.pathname !== "/explore/search/keyword/" || url.searchParams.get("q") !== a.query)
+        throw new BridgeError("TARGET_CHANGED");
+      check();
+      let navigationUnknown = false;
+      try {
+        const navigated = await this.command("navigate", {
+          session: b.session,
+          contextId: b.profile,
+          page: b.target,
+          url: url.href
+        });
+        if (navigated.page !== b.target) throw new BridgeError("TARGET_CHANGED");
+      } catch (e) {
+        if (!(e instanceof BridgeError) || e.backend_code !== "command_result_unknown") throw e;
+        navigationUnknown = true;
+      }
+      checkpoint("instagram_search_navigated");
+      const result = await this.poll(
         b,
         {
           action: "search_result",
           query: a.query,
           limit: a.limit,
-          request_id: a.client_request_id
+          request_id: a.client_request_id,
+          snapshot
         },
         check
       );
+      return { ...result, ...navigationUnknown ? { navigation_reconciled: true } : {} };
     }
     if (tool === "ig_read_post") {
       await this.program(b, { action: "post_open", post_url: a.post_url });

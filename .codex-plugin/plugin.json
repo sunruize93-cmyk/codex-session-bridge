@@ -1,7 +1,7 @@
 {
   "name": "codex-session-bridge",
-  "version": "0.1.0",
-  "description": "本地小红书与微信会话桥",
+  "version": "0.2.0",
+  "description": "小红书与 Instagram 的本地浏览器会话桥，附可选微信适配器。",
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
   "requires_local_executor": true

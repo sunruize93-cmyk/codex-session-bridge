@@ -433,7 +433,11 @@ export class Coordinator {
             t.status = 'NEEDS_REBIND';
             b.state = 'NEEDS_REBIND';
           } else t.status = 'FAILED';
-          t.error = { code: unknown ? 'OUTCOME_UNKNOWN' : code, retryable: false };
+          t.error = {
+            code: unknown ? 'OUTCOME_UNKNOWN' : code,
+            retryable: false,
+            ...(e instanceof BridgeError && e.backend_code ? { backend_code: e.backend_code } : {}),
+          };
           this.store.put('binding', b);
           this.save(t);
         }

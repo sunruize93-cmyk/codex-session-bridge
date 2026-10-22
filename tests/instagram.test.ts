@@ -70,39 +70,30 @@ test('Instagram schema 拒绝外站、用户信息、编码斜杠、非帖子路
   ])
     assert.throws(() => input('ig_search', { binding_id: 'b', client_request_id: 'r', ...args }));
 });
-test('Instagram 搜索拒绝旧推荐与路由先变正文未变，只返回有界可见帖子', async () => {
+test('Instagram 搜索核验正常路由、查询标题和新结果；快照不输入或点击', async () => {
   const p = page(identity + field + '<main><a href="/p/OldSynthetic/">old</a></main>');
   try {
-    let clicks = 0;
-    p.w.document.querySelector('input').addEventListener('keydown', (e: any) => {
-      if (e.key === 'Enter') clicks++;
-    });
-    const o = await p.fn({ action: 'inspect' });
-    const guard = { document: o.document, origin: o.origin, account: o.account };
-    await p.fn({ action: 'search_start', query: 'synthetic query', guard });
-    assert.equal(clicks, 1);
-    assert.equal(p.w.document.querySelector('input').value, 'synthetic query');
-    assert.equal(
-      (await p.fn({ action: 'search_result', query: 'synthetic query', guard })).pending,
-      true,
-    );
+    const snapshot = await p.fn({ action: 'search_start', query: 'synthetic query' });
+    assert.equal(new URL(snapshot.navigation_url).searchParams.get('q'), 'synthetic query');
+    assert.equal(p.w.document.querySelector('input').value, '');
+    const read = () =>
+      p.fn({ action: 'search_result', query: 'synthetic query', snapshot, limit: 2 });
+    assert.equal((await read()).pending, true);
     p.w.history.pushState({}, '', '/explore/search/keyword/?q=synthetic%20query');
-    assert.equal(
-      (await p.fn({ action: 'search_result', query: 'synthetic query', guard })).pending,
-      true,
-    );
+    assert.equal((await read()).pending, true);
     p.w.document.querySelector('main').innerHTML =
-      '<a href="/p/Synthetic_1/"><img alt="synthetic caption"></a><a href="https://evil.test/p/Other/">bad</a><a href="/owner/">account</a><a href="/explore/tags/synthetic/">tag</a><a href="/reel/Synthetic_2/">reel</a><a href="/p/Synthetic_3/">third</a>';
-    const r = await p.fn({ action: 'search_result', query: 'synthetic query', limit: 2, guard });
+      '<span dir="auto">Synthetic query</span><a href="/p/Synthetic_1/"><img alt="HIDDEN" hidden><img alt="visible preview"></a><a href="https://evil.test/p/Other/">bad</a><a href="/owner/">account</a><a href="/explore/tags/synthetic/">tag</a><a href="/reel/Synthetic_2/">reel</a><a href="/p/Synthetic_3/">third</a>';
+    const r = await read();
     assert.equal(r.results.length, 2);
     assert.equal(r.results[0].type, 'post');
     assert.equal(r.results[0].post_url, post);
+    assert.equal(r.results[0].preview, 'visible preview');
     assert.equal(r.partial, true);
-    assert.equal(clicks, 1);
   } finally {
     p.close();
   }
 });
+
 test('Instagram 只读匹配 shortcode 的正文，不读取评论或执行正文指令', async () => {
   const p = page(
     identity +
@@ -352,56 +343,54 @@ test('Instagram 可见正文排除隐藏子树并保留词间空格，预览排�
     p.close();
   }
 });
-test('Instagram 同查询不同请求必须重新提交，旧结果等待更新', async () => {
-  const p = page(identity + field + '<main><a href="/p/OldSynthetic/">old</a></main>');
+test('Instagram 新请求同关键词也重新导航，不复用页面提交缓存', async () => {
+  const a = new InstagramAdapter('synthetic');
+  let navigations = 0;
+  const ids: string[] = [];
+  a.program = async (_b, p) => ({
+    navigation_url: 'https://www.instagram.com/explore/search/keyword/?q=same',
+    request_id: p.request_id,
+  });
+  a.command = async (action, p) => {
+    assert.equal(action, 'navigate');
+    assert.equal(new URL(p.url).searchParams.get('q'), 'same');
+    navigations++;
+    return { page: 't' };
+  };
+  a.poll = async (_b, p) => {
+    ids.push(p.request_id);
+    return { source: 'synthetic', partial: true };
+  };
+  for (const client_request_id of ['first', 'second'])
+    await a.execute(
+      'ig_search',
+      { query: 'same', client_request_id },
+      binding,
+      () => {},
+      () => {},
+    );
+  assert.equal(navigations, 2);
+  assert.deepEqual(ids, ['first', 'second']);
+});
+test('Instagram 同一文档中的旧卡片等待更新，正常新文档须核验查询标题', async () => {
+  const p = page(
+    '<main><span dir="auto">same</span><a href="/p/Synthetic_1/">post</a></main>',
+    'https://www.instagram.com/explore/search/keyword/?q=same',
+  );
   try {
-    let submitted = 0;
-    p.w.document.querySelector('input').addEventListener('keydown', (e: any) => {
-      if (e.key === 'Enter') submitted++;
-    });
-    await p.fn({ action: 'search_start', request_id: 'first', query: 'same' });
-    p.w.history.pushState({}, '', '/explore/search/keyword/?q=same');
-    p.w.document.querySelector('main').innerHTML =
-      '<a href="/p/FirstSynthetic/"><img alt="HIDDEN" hidden><img alt="visible"></a>';
-    assert.equal(
-      (await p.fn({ action: 'search_result', request_id: 'first', query: 'same' })).results[0]
-        .preview,
-      'visible',
-    );
-    await p.fn({ action: 'search_start', request_id: 'second', query: 'same' });
-    assert.equal(
-      (await p.fn({ action: 'search_result', request_id: 'second', query: 'same' })).pending,
-      true,
-    );
-    assert.equal(submitted, 2);
-    await p.fn({ action: 'search_start', request_id: 'second', query: 'same' });
-    assert.equal(submitted, 2);
+    const snapshot = await p.fn({ action: 'search_start', query: 'same' });
+    const args = { action: 'search_result', query: 'same', snapshot };
+    assert.equal((await p.fn(args)).pending, true);
+    delete p.w.__codexInstagramBridge;
+    assert.equal((await p.fn(args)).results.length, 1);
+    p.w.document.querySelector('span').textContent = 'other query';
+    assert.equal((await p.fn(args)).pending, true);
+    assert.equal((await p.fn({ ...args, request_id: 'wrong' })).bridge_error, 'UI_CHANGED');
   } finally {
     p.close();
   }
 });
 
-test('Instagram React等待后重核输入身份，隐藏旧控件不接收Enter', async () => {
-  const p = page(identity + field + '<main></main>');
-  try {
-    const old = p.w.document.querySelector('input');
-    let sent = 0;
-    old.addEventListener('keydown', () => sent++);
-    old.addEventListener('input', () => {
-      old.setAttribute('aria-hidden', 'true');
-      const next = old.cloneNode();
-      next.removeAttribute('aria-hidden');
-      old.parentElement.append(next);
-    });
-    assert.equal(
-      (await p.fn({ action: 'search_start', query: 'synthetic' })).bridge_error,
-      'UI_CHANGED',
-    );
-    assert.equal(sent, 0);
-  } finally {
-    p.close();
-  }
-});
 test('Instagram 对话框内帖子正文的限流字样不作为平台警告', async () => {
   const p = page(
     '<div role="dialog"><article><a href="/p/Synthetic_1/"><time datetime="2026-01-01">date</time></a><h1>Try again later 是合成正文</h1></article></div>',
@@ -412,6 +401,50 @@ test('Instagram 对话框内帖子正文的限流字样不作为平台警告', a
     assert.equal(
       (await p.fn({ action: 'post_read', post_url: post })).caption,
       'Try again later 是合成正文',
+    );
+  } finally {
+    p.close();
+  }
+});
+
+test('Instagram 只读导航结果未知时只核对页面，不重复导航', async () => {
+  const a = new InstagramAdapter('synthetic');
+  let navigated = 0,
+    observed = 0;
+  a.program = async () => ({
+    navigation_url: 'https://www.instagram.com/explore/search/keyword/?q=same',
+  });
+  a.command = async () => {
+    navigated++;
+    const e = new BridgeError('BRIDGE_DISCONNECTED');
+    e.backend_code = 'command_result_unknown';
+    throw e;
+  };
+  a.poll = async () => {
+    observed++;
+    return { query: 'same', results: [], partial: true };
+  };
+  const r = await a.execute(
+    'ig_search',
+    { query: 'same', client_request_id: 'synthetic' },
+    binding,
+    () => {},
+    () => {},
+  );
+  assert.equal(navigated, 1);
+  assert.equal(observed, 1);
+  assert.equal(r.navigation_reconciled, true);
+});
+
+test('Instagram 帖子自身的作者前缀permalink可归一，评论permalink不冒充帖子身份', async () => {
+  const p = page(
+    '<main><article><h1>synthetic caption</h1><a href="/synthetic_owner/p/Synthetic_1/"><time datetime="2026-01-01">date</time></a><a href="/p/Synthetic_1/c/123/"><time datetime="2026-01-02">comment date</time></a></article></main>',
+    post,
+  );
+  try {
+    assert.equal(
+      (await p.fn({ action: 'post_read', post_url: post })).caption,
+      'synthetic caption',
     );
   } finally {
     p.close();

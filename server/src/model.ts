@@ -16,6 +16,7 @@ function canonical(v: any): any {
   return v;
 }
 export class BridgeError extends Error {
+  backend_code?: string;
   constructor(
     public code: string,
     public detail: string = code,
@@ -65,7 +66,7 @@ export type Task = {
   status: string;
   checkpoint: string;
   result?: any;
-  error?: { code: string; retryable: boolean };
+  error?: { code: string; retryable: boolean; backend_code?: string };
   created_at: string;
   updated_at: string;
   assisted?: boolean;

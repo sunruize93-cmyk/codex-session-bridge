@@ -42,7 +42,8 @@ if (existsSync(join(root, 'artifacts/browser-bridge-1.0.26.zip')))
     join(root, 'artifacts/browser-bridge-1.0.26.zip'),
     join(dest, 'browser-bridge-1.0.26.zip'),
   );
-const basename = `codex-session-bridge-0.1.0-${process.platform}-${process.arch}.tar.gz`;
+const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version;
+const basename = `codex-session-bridge-${version}-${process.platform}-${process.arch}.tar.gz`;
 const out = join(root, 'artifacts', basename);
 execFileSync('tar', ['-czf', out, '-C', stage, 'codex-session-bridge']);
 const sha = createHash('sha256').update(readFileSync(out)).digest('hex');
