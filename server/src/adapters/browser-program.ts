@@ -14,6 +14,29 @@ export async function browserProgram(p: any): Promise<any> {
       return es[0];
     };
     const value = (e: any) => String(e.value ?? e.innerText ?? '');
+    const searchField = () => {
+      const fields = list(
+        'input#search-input, input[placeholder="搜索小红书"], textarea#search-input-ai, textarea#search-input-in-feeds',
+      ).filter(
+        (e) =>
+          e.getAttribute('aria-hidden') !== 'true' &&
+          !(e as HTMLInputElement).disabled &&
+          !(e as HTMLInputElement).readOnly,
+      );
+      if (fields.length !== 1) throw new Error('UI_CHANGED');
+      return fields[0];
+    };
+    const noteLinkId = (el: Element) => {
+      try {
+        const url = new URL(el.getAttribute('href') || '', location.href);
+        if (url.origin !== 'https://www.xiaohongshu.com') return undefined;
+        return url.pathname.match(
+          /^\/(?:explore|search_result|note|discovery\/item)\/([a-f0-9]{24})\/?$/,
+        )?.[1];
+      } catch {
+        return undefined;
+      }
+    };
     const readAccount = () => {
       const links = list(
         'a.user[href*="/user/profile/"], .user a[href*="/user/profile/"], .side-bar a[href*="/user/profile/"]',
@@ -110,7 +133,7 @@ export async function browserProgram(p: any): Promise<any> {
       b[0].click();
     };
     if (p.action === 'search_start') {
-      const field = one('input#search-input, input[placeholder="搜索小红书"]');
+      const field = searchField();
       set(field, p.query);
       const old = list('section.note-item, .note-item, [data-testid="note-card"]');
       w.__csbSearch = { query: p.query, old: old.map((e) => e.outerHTML).join(''), changed: false };
@@ -133,34 +156,51 @@ export async function browserProgram(p: any): Promise<any> {
       w.__csbObserver?.disconnect();
       w.__csbObserver = observer;
       const primary = list('.search-icon');
-      const submit = primary.length ? primary : list('.input-button, button[aria-label="搜索"]');
-      if (submit.length !== 1) throw new Error('UI_CHANGED');
+      const modernBox = field.closest('.search-box-in-content, .search-area-in-header');
+      const modern = modernBox
+        ? Array.from(modernBox.querySelectorAll<HTMLElement>('.submit-button-wrapper')).filter(
+            visible,
+          )
+        : [];
+      const submit = modernBox
+        ? modern
+        : primary.length
+          ? primary
+          : list('.input-button, button[aria-label="搜索"]');
+      if (
+        submit.length !== 1 ||
+        (submit[0] as HTMLButtonElement).disabled ||
+        submit[0].getAttribute('aria-disabled') === 'true'
+      )
+        throw new Error('UI_CHANGED');
       fresh();
       submit[0].click();
       return { submitted: true };
     }
     if (p.action === 'search_result') {
       const state = w.__csbSearch;
-      const field = one('input#search-input, input[placeholder="搜索小红书"]');
+      const field = searchField();
       const cards = list('section.note-item, .note-item, [data-testid="note-card"]');
+      const rawKeyword = new URL(location.href).searchParams.get('keyword');
+      let keywordMatches = rawKeyword === p.query;
+      if (!keywordMatches && rawKeyword !== null) {
+        try {
+          keywordMatches = decodeURIComponent(rawKeyword) === p.query;
+        } catch {}
+      }
       if (
         !state ||
         state.query !== p.query ||
         value(field) !== p.query ||
-        new URL(location.href).searchParams.get('keyword') !== p.query ||
+        !keywordMatches ||
         cards.map((e) => e.outerHTML).join('') === state.old
       )
         return { pending: true };
       const results = cards
         .map((e) => {
-          const a = e.querySelector(
-            'a[href*="/explore/"], a[href*="/search_result/"], a[href*="/note/"], a[href*="/discovery/item/"]',
-          );
-          const href = a?.getAttribute('href') || '';
+          const a = Array.from(e.querySelectorAll('a[href]')).find(noteLinkId);
           return {
-            note_id: href.match(
-              /\/(?:explore|search_result|note|discovery\/item)\/([a-f0-9]{24})/,
-            )?.[1],
+            note_id: a && noteLinkId(a),
             title: (e.querySelector('.title')?.textContent || e.textContent || '')
               .trim()
               .slice(0, 500),
@@ -179,18 +219,19 @@ export async function browserProgram(p: any): Promise<any> {
     }
     if (p.action === 'note_open') {
       if (noteId() === p.note_id) return { opened: true };
-      const a = list(
-        'a[href*="/explore/"],a[href*="/search_result/"],a[href*="/note/"],a[href*="/discovery/item/"]',
-      ).filter(
-        (e) =>
-          e
-            .getAttribute('href')
-            ?.match(/\/(?:explore|search_result|note|discovery\/item)\/([a-f0-9]{24})/)?.[1] ===
-          p.note_id,
-      );
-      if (a.length !== 1) throw new Error('UI_CHANGED');
+      const links = list('a[href]').filter((e) => noteLinkId(e) === p.note_id);
+      const cardSelector = 'section.note-item, .note-item, [data-testid="note-card"]';
+      const card = links[0]?.closest(cardSelector);
+      if (
+        !links.length ||
+        (links.length > 1 && (!card || links.some((e) => e.closest(cardSelector) !== card)))
+      )
+        throw new Error('UI_CHANGED');
+      const covers = links.filter((e) => e.matches('.cover'));
+      if (covers.length > 1) throw new Error('UI_CHANGED');
+      const a = covers[0] || links[0];
       fresh();
-      a[0].click();
+      a.click();
       return { opened: true };
     }
     if (p.action === 'note_read') {

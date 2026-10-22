@@ -28,6 +28,124 @@ function page(body: string, cryptoImpl: any = webcrypto) {
 }
 const cards =
   '<section class="note-item"><a href="/explore/0123456789abcdef01234567">old result</a></section>';
+test('新版搜索忽略隐藏旧输入与镜像，只点击普通搜索按钮', async () => {
+  const p = page(
+    '<input id="search-input" style="display:none"><div class="search-box-in-content"><textarea aria-hidden="true" placeholder="搜索小红书"></textarea><textarea id="search-input-in-feeds"></textarea><button class="wendian-btn">问点点</button><div class="submit-button-wrapper"></div></div>' +
+      cards,
+  );
+  try {
+    let searched = 0;
+    let asked = 0;
+    p.w.document.querySelector('.submit-button-wrapper').onclick = () => searched++;
+    p.w.document.querySelector('.wendian-btn').onclick = () => asked++;
+    const o = await p.fn({ action: 'inspect' });
+    const guard = { document: o.document, origin: o.origin };
+    const result = await p.fn({ action: 'search_start', query: '合成查询', guard });
+    assert.equal(result.submitted, true);
+    assert.equal(p.w.document.querySelector('#search-input-in-feeds').value, '合成查询');
+    assert.equal(searched, 1);
+    assert.equal(asked, 0);
+    p.w.history.pushState({}, '', '?keyword=' + encodeURIComponent('合成查询'));
+    assert.equal(
+      (await p.fn({ action: 'search_result', query: '合成查询', limit: 3, guard })).pending,
+      true,
+    );
+    p.w.document.querySelector('.note-item a').textContent = 'new result';
+    assert.equal(
+      (await p.fn({ action: 'search_result', query: '合成查询', limit: 3, guard })).results.length,
+      1,
+    );
+  } finally {
+    p.close();
+  }
+});
+test('新版搜索没有可用的唯一普通提交按钮时不回退到 AI 控件', async () => {
+  for (const button of [
+    '<div class="submit-button-wrapper" style="display:none"></div>',
+    '<button class="submit-button-wrapper" disabled></button>',
+    '<div class="submit-button-wrapper" aria-disabled="true"></div>',
+    '<div class="submit-button-wrapper"></div><div class="submit-button-wrapper"></div>',
+  ]) {
+    const p = page(
+      '<div class="search-box-in-content"><textarea id="search-input-in-feeds"></textarea><button class="input-button">问点点</button>' +
+        button +
+        '</div>',
+    );
+    try {
+      let clicks = 0;
+      p.w.document.querySelector('.input-button').onclick = () => clicks++;
+      const o = await p.fn({ action: 'inspect' });
+      const r = await p.fn({
+        action: 'search_start',
+        query: '合成查询',
+        guard: { document: o.document, origin: o.origin },
+      });
+      assert.equal(r.bridge_error, 'UI_CHANGED');
+      assert.equal(clicks, 0);
+    } finally {
+      p.close();
+    }
+  }
+});
+test('新版路由只额外解码一次并核对新结果与输入', async () => {
+  const p = page(
+    '<textarea id="search-input-ai"></textarea><button aria-label="搜索"></button>' + cards,
+  );
+  try {
+    const o = await p.fn({ action: 'inspect' });
+    const guard = { document: o.document, origin: o.origin };
+    const query = '合成查询';
+    await p.fn({ action: 'search_start', query, guard });
+    p.w.history.pushState(
+      {},
+      '',
+      '/search_result_ai?keyword=' + encodeURIComponent(encodeURIComponent(query)),
+    );
+    assert.equal((await p.fn({ action: 'search_result', query, limit: 3, guard })).pending, true);
+    p.w.document.querySelector('.note-item a').textContent = 'new result';
+    assert.equal(
+      (await p.fn({ action: 'search_result', query, limit: 3, guard })).results.length,
+      1,
+    );
+    p.w.history.pushState({}, '', '?keyword=' + encodeURIComponent(encodeURIComponent('另一查询')));
+    assert.equal((await p.fn({ action: 'search_result', query, limit: 3, guard })).pending, true);
+  } finally {
+    p.close();
+  }
+});
+test('同一卡片封面标题链接消歧，重复卡片与外站链接拒绝点击', async () => {
+  const note = '0123456789abcdef01234567';
+  const card = `<section class="note-item"><a class="cover" href="/search_result/${note}">cover</a><a class="title" href="/search_result/${note}">title</a></section>`;
+  for (const [body, success] of [
+    [card, true],
+    [card + card, false],
+    [
+      `<section class="note-item"><a href="https://example.com/explore/${note}">external</a></section>`,
+      false,
+    ],
+  ] as const) {
+    const p = page(body);
+    try {
+      let clicks = 0;
+      for (const a of p.w.document.querySelectorAll('a'))
+        a.onclick = (e: Event) => {
+          e.preventDefault();
+          clicks++;
+        };
+      const o = await p.fn({ action: 'inspect' });
+      const r = await p.fn({
+        action: 'note_open',
+        note_id: note,
+        guard: { document: o.document, origin: o.origin },
+      });
+      assert.equal(r.opened, success ? true : undefined);
+      assert.equal(clicks, success ? 1 : 0);
+      if (!success) assert.equal(r.bridge_error, 'UI_CHANGED');
+    } finally {
+      p.close();
+    }
+  }
+});
 test('遮罩优先于背景旧卡片，正文验证码文字不误报', async () => {
   const p = page('<article>验证码介绍</article>' + cards);
   try {
