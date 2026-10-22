@@ -14,7 +14,11 @@
 | Browser Bridge | 1.0.26 已连接             | 真实 profile 与绑定页已核对                        |
 | 本地插件       | 桌面工具已加载            | 正式 MCP 搜索及正文读取均返回 SUCCEEDED            |
 
-微信不支持 Windows/Linux。当前 native 实现只处理显式可访问 AX 控件，不截图、不 OCR、不遍历历史、不注入协议或提取数据库密钥。搜索候选不唯一、编辑器/发送按钮不可访问时失败。通用 doctor 仅检查环境与权限元数据，不创建微信 AX 应用对象；显式绑定/业务请求才读控件。裸窗口返回 WECHAT_AX_UNAVAILABLE，安全重登模态层返回 AUTH_REQUIRED。没有证明 AX 访问触发本次重登，也没有证明减少探测已消除此问题。
+微信不支持 Windows/Linux。native-ax 模式只处理显式可访问 AX 控件；搜索候选不唯一、编辑器/发送按钮不可访问时失败。通用 doctor 仅检查环境与权限元数据，不创建微信 AX 应用对象。裸窗口返回 WECHAT_AX_UNAVAILABLE，安全重登模态层返回 AUTH_REQUIRED。没有证明 AX 访问触发本次重登，也没有证明减少探测已消除此问题。
+
+新增显式 screen-readonly 模式：要求用户手动打开目标独立聊天窗口并保持微信前台；窗口标题精确匹配、同名窗口唯一，拒绝微信/WeChat/Weixin 主标题及不可共享窗口。绑定和检查只读元数据；find/read 才截取单帧并用本地 Apple Vision 核对标题、提取最多 3 行可见文字，标明 partial、message_boundaries_verified:false。无 AX、无前置/点击/键盘、无图像落盘、无历史遍历；所有写入与核对接口在观察应用前拒绝。仅支持具有 SCScreenshotConfiguration 的 macOS（本机为 26）；不是原生 AX 的自动降级后端。
+
+本机 4.1.8 的文件助手独立窗口 SharingState=0，系统捕获返回全透明图像；当前模式在元数据阶段返回 SCREEN_CAPTURE_RESTRICTED。屏幕录制权限 true 不会消除该限制。用户确认这轮无 AX/无输入的对照期间保持登录；只说明有限对照的现象，不证明长期稳定或确定根因。没有修改窗口共享属性、注入客户端或提取数据库密钥。官方 4.1.15 安装包已核验签名与公证，尚未替换正在运行的客户端。
 
 微信账号标识（current_account_id/wechat_account_id）、稳定接收者标识（current_chat_id）、消息 ID 与 outgoing 元数据必须由实际 AX 提供。当前客户端是否提供这些信息尚未知；这些分支仅做了合成契约测试。缺少稳定账号或接收者证据时禁止发送；不要把给予权限视为已经解决此限制。无稳定接收者的只读结果带部分结果语义；同名候选仍拒绝自动选择。
 

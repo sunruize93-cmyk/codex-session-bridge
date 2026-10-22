@@ -7,6 +7,8 @@ description: 安装、诊断本地小红书与微信会话桥，检查 Chrome �
 
 doctor 的微信分支仅检查元数据，不访问应用 AX 树；controls_checked:false 不能解释为未授权或读取成功。不要在只测试浏览器时反复探测微信。安全重登不是重复开权限可以解决的问题；出现后停止业务，不把再次人工登录计为故障已修复。
 
+仅在用户明确选择屏幕只读时使用 read_only_backend:screen、user_bound:true、expected_chat。要求用户手动打开独立聊天窗口并保持前台；不前置、不输入、不用 AX。录屏权限也不能越过窗口禁止共享；SCREEN_CAPTURE_RESTRICTED/EMPTY 时停止，不切换后端反复试探。该模式依赖 Apple ScreenCaptureKit/Vision，需支持 SCScreenshotConfiguration 的系统；本机仅验 macOS 26。
+
 绑定用户当前选中的已有窗口。浏览器 profile 必须来自 doctor 的真实列表。识别不到账号时，只有用户明确表示已选择当前账号，才使用 user_bound:true，并说明它不是程序已核验身份。草稿与实际发送分开。
 
 默认实际提交关闭；只有用户要求配置后，才执行本地 CLI write-mode trusted-host。它表示信任个人 Codex 宿主，不是授权证明。当前任务若未授权发送、评论或发布，不调用提交工具。
