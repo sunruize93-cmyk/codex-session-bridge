@@ -12,7 +12,9 @@
     "check": "tsc --noEmit",
     "test": "node --test --import tsx tests/*.test.ts",
     "doctor": "node server/dist/cli.js doctor",
-    "package": "node scripts/package.mjs"
+    "package": "node scripts/package.mjs",
+    "format": "prettier --write server/src tests scripts/*.mjs *.json *.md docs skills .codex-plugin .agents .github",
+    "format:check": "prettier --check server/src tests scripts/*.mjs *.json *.md docs skills .codex-plugin .agents .github"
   },
   "dependencies": {
     "@jackwener/opencli": "2.0.2",
@@ -25,6 +27,7 @@
     "@types/node": "22.19.7",
     "esbuild": "0.28.2",
     "jsdom": "26.1.0",
+    "prettier": "3.6.2",
     "tsx": "4.21.0",
     "typescript": "5.9.3"
   },

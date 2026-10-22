@@ -20,7 +20,7 @@ def main(p):
     trusted = bool(AX.AXIsProcessTrusted())
     apps = AppKit.NSRunningApplication.runningApplicationsWithBundleIdentifier_('com.tencent.xinWeChat')
     if p['action'] == 'doctor':
-        return {'channel': 'wechat_macos', 'os': platform.mac_ver()[0], 'running': bool(apps), 'accessibility': trusted, 'screen_recording': bool(Quartz.CGPreflightScreenCaptureAccess()), 'screenshot_used': False, 'worker': sys.version.split()[0]}
+        return {'channel': 'wechat_macos', 'os': platform.mac_ver()[0], 'running': bool(apps), 'accessibility': trusted, 'screen_recording': bool(Quartz.CGPreflightScreenCaptureAccess()), 'screenshot_used': False, 'worker': sys.version.split()[0], 'worker_executable': sys.executable}
     if not trusted:
         fail('OS_PERMISSION_REQUIRED')
     if len(apps) != 1:
@@ -80,13 +80,17 @@ def main(p):
     if guard.get('account') and observed.get('account') != guard['account']:
         fail('ACCOUNT_MISMATCH')
     def foreground():
+        if time.time() * 1000 > p.get('deadline', float('inf')):
+            fail('TIMEOUT_BEFORE_DISPATCH')
         # 不连续抢焦点，用户先选择窗口。进程与窗口焦点都须相同。
         front = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
         focused = get(ax, 'AXFocusedWindow')
         if not front or front.processIdentifier() != app.processIdentifier() or focused != window:
             fail('FOCUS_LOST')
     def chat_ref():
-        return digest({'target': target, 'title': title()})
+        ids = [get(e, 'AXValue') for e in nodes() if get(e, 'AXIdentifier') == 'current_chat_id']
+        recipient = ids[0] if len(ids) == 1 else None
+        return digest({'target': target, 'title': title(), 'recipient': recipient})
     def assert_chat():
         if chat_ref() != p.get('chat_ref'):
             fail('TARGET_CHANGED')
@@ -131,10 +135,18 @@ def main(p):
     assert_chat()
     if p['action'] == 'read':
         return {'chat_ref': p['chat_ref'], 'messages': messages(), 'partial': True, 'source': 'visible_ax', 'observed_at': time.time()}
+    def read_receipt():
+        path = p.get('receipt_path')
+        if not path or not os.path.exists(path):
+            return None
+        with open(path, encoding='utf-8') as f:
+            r = json.load(f)
+        if r.get('operation_id') != p.get('operation_id') or r.get('payload_digest') != p.get('payload_digest') or r.get('target') != target:
+            fail('TARGET_CHANGED')
+        return r
     if p['action'] == 'reconcile':
-        before = p.get('prepared', {}).get('before_ids', [])
-        matches = [m for m in messages() if m.get('message_id') and m['message_id'] not in before and m['sender'] == 'ME' and m['body'] == p['body']]
-        return {'confirmed': len(matches) == 1, 'confirmation': 'ui_only', 'message_id': matches[0]['message_id'] if len(matches) == 1 else None}
+        receipt = read_receipt()
+        return receipt if receipt and receipt.get('confirmed') else {'confirmed': False, 'reason': '缺少本次点击捕获的可靠回执'}
     editor = unique(lambda e: get(e, 'AXRole') == 'AXTextArea' and get(e, 'AXIdentifier') in ('chat_input', 'message_input', 'input_text_area'))
     if p['action'] == 'prepare':
         foreground()
@@ -155,20 +167,39 @@ def main(p):
         send = unique(lambda e: get(e, 'AXRole') == 'AXButton' and label(e) in ('发送', 'Send'))
         foreground()
         assert_chat()
+        receipt = read_receipt()
+        if receipt:
+            return receipt
+        path = p.get('receipt_path')
+        if not path or not p.get('operation_id') or not p.get('payload_digest'):
+            fail('OUTCOME_UNKNOWN')
+        before = [m['message_id'] for m in messages() if m.get('message_id')]
+        receipt = {'operation_id': p['operation_id'], 'payload_digest': p['payload_digest'], 'target': target, 'confirmed': False}
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump(receipt, f); f.flush(); os.fsync(f.fileno())
+        foreground(); assert_chat()
+        if account() != guard['account'] or label(editor) != p['body']:
+            fail('TARGET_CHANGED')
         if AX.AXUIElementPerformAction(send, 'AXPress') != 0:
             fail('OUTCOME_UNKNOWN')
-        # 没有稳定的消息 ID 和发送者证据时，不用同文历史气泡证明成功。
-        before = p.get('prepared', {}).get('before_ids', [])
+        # 只捕获紧接本次点击的结果；日后加载的旧消息不能变成本次成功。
         matches = [m for m in messages() if m.get('message_id') and m['message_id'] not in before and m['sender'] == 'ME' and m['body'] == p['body']]
-        return {'confirmed': len(matches) == 1, 'confirmation': 'ui_only', 'message_id': matches[0]['message_id'] if len(matches) == 1 else None}
-    if p['action'] == 'reconcile':
-        return {'confirmed': False, 'reason': '仅观察；现有 AX 未提供稳定消息 ID，不重发'}
+        if len(matches) == 1 and label(editor) == '':
+            receipt.update({'confirmed': True, 'confirmation': 'ui_only', 'message_id': matches[0]['message_id']})
+            temp = path + '.tmp-' + str(os.getpid())
+            fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                json.dump(receipt, f); f.flush(); os.fsync(f.fileno())
+            os.replace(temp, path)
+        return receipt
     fail('UNSUPPORTED_ACTION')
 
-try:
-    data = json.loads(sys.stdin.buffer.read(262145))
-    output = {'ok': True, 'data': main(data)}
-except Exception as e:
-    known = {'OS_PERMISSION_REQUIRED', 'APP_NOT_RUNNING', 'WECHAT_AX_UNAVAILABLE', 'TARGET_CHANGED', 'ACCOUNT_MISMATCH', 'AUTH_REQUIRED', 'FOCUS_LOST', 'RECIPIENT_AMBIGUOUS', 'UI_CHANGED', 'PAYLOAD_CHANGED', 'ACCOUNT_UNVERIFIED', 'RECIPIENT_UNVERIFIED', 'OUTCOME_UNKNOWN', 'UNSUPPORTED_ACTION', 'UNSUPPORTED_PLATFORM'}
-    output = {'ok': False, 'error': str(e) if str(e) in known else 'WECHAT_AX_UNAVAILABLE'}
-print(json.dumps(output, ensure_ascii=False))
+if __name__ == '__main__':
+    try:
+        data = json.loads(sys.stdin.buffer.read(262145))
+        output = {'ok': True, 'data': main(data)}
+    except Exception as e:
+        known = {'OS_PERMISSION_REQUIRED', 'APP_NOT_RUNNING', 'WECHAT_AX_UNAVAILABLE', 'TARGET_CHANGED', 'ACCOUNT_MISMATCH', 'AUTH_REQUIRED', 'FOCUS_LOST', 'RECIPIENT_AMBIGUOUS', 'UI_CHANGED', 'PAYLOAD_CHANGED', 'ACCOUNT_UNVERIFIED', 'RECIPIENT_UNVERIFIED', 'OUTCOME_UNKNOWN', 'UNSUPPORTED_ACTION', 'UNSUPPORTED_PLATFORM', 'TIMEOUT_BEFORE_DISPATCH'}
+        output = {'ok': False, 'error': str(e) if str(e) in known else 'WECHAT_AX_UNAVAILABLE'}
+    print(json.dumps(output, ensure_ascii=False))

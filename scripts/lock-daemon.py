@@ -7,7 +7,12 @@ p.mkdir(mode=0o700, parents=True, exist_ok=True)
 if p.is_symlink() or p.stat().st_uid != os.getuid():
     raise SystemExit('unsafe state directory')
 os.chmod(p, 0o700)
-fd = os.open(p / 'coordinator.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+lock_dir = p if os.environ.get('SESSION_BRIDGE_ISOLATED_TEST') == '1' else pathlib.Path.home() / 'Library' / 'Application Support' / 'codex-session-bridge'
+lock_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+if lock_dir.is_symlink() or lock_dir.stat().st_uid != os.getuid():
+    raise SystemExit('unsafe lock directory')
+os.chmod(lock_dir, 0o700)
+fd = os.open(lock_dir / 'coordinator.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
 try:
     fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
 except BlockingIOError:

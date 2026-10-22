@@ -11,7 +11,10 @@ var now = () => (/* @__PURE__ */ new Date()).toISOString();
 var hash = (v) => createHash("sha256").update(JSON.stringify(canonical(v))).digest("hex");
 function canonical(v) {
   if (Array.isArray(v)) return v.map(canonical);
-  if (v && typeof v === "object") return Object.fromEntries(Object.keys(v).sort().map((k) => [k, canonical(v[k])]));
+  if (v && typeof v === "object")
+    return Object.fromEntries(
+      Object.keys(v).sort().map((k) => [k, canonical(v[k])])
+    );
   return v;
 }
 var BridgeError = class extends Error {
@@ -24,11 +27,14 @@ var BridgeError = class extends Error {
   detail;
 };
 function assertObservation(b, o) {
-  if (o.connection !== b.connection) throw new BridgeError("TARGET_CHANGED", "\u63A7\u5236\u8FDE\u63A5\u5DF2\u66F4\u6362\uFF0C\u8BF7\u91CD\u65B0\u7ED1\u5B9A");
+  if (o.connection !== b.connection)
+    throw new BridgeError("TARGET_CHANGED", "\u63A7\u5236\u8FDE\u63A5\u5DF2\u66F4\u6362\uFF0C\u8BF7\u91CD\u65B0\u7ED1\u5B9A");
   if (o.target !== b.target) throw new BridgeError("TARGET_CHANGED", "\u6267\u884C\u76EE\u6807\u5DF2\u6539\u53D8");
   if (o.blocker) throw new BridgeError(o.blocker);
-  if (b.account && o.account !== b.account) throw new BridgeError("ACCOUNT_MISMATCH", "\u8D26\u53F7\u8BC1\u636E\u6539\u53D8\u6216\u6D88\u5931");
-  if (b.channel === "xiaohongshu_web" && !["https://www.xiaohongshu.com", "https://creator.xiaohongshu.com"].includes(o.origin ?? "")) throw new BridgeError("TARGET_CHANGED", "\u9875\u9762\u79BB\u5F00\u5141\u8BB8\u7684\u6765\u6E90");
+  if (b.account && o.account !== b.account)
+    throw new BridgeError("ACCOUNT_MISMATCH", "\u8D26\u53F7\u8BC1\u636E\u6539\u53D8\u6216\u6D88\u5931");
+  if (b.channel === "xiaohongshu_web" && !["https://www.xiaohongshu.com", "https://creator.xiaohongshu.com"].includes(o.origin ?? ""))
+    throw new BridgeError("TARGET_CHANGED", "\u9875\u9762\u79BB\u5F00\u5141\u8BB8\u7684\u6765\u6E90");
 }
 
 // server/src/queue.ts
@@ -38,9 +44,12 @@ var Scheduler = class {
   run(f) {
     this.pending++;
     const p = this.tail.then(f);
-    this.tail = p.then(() => {
-    }, () => {
-    });
+    this.tail = p.then(
+      () => {
+      },
+      () => {
+      }
+    );
     return p.finally(() => {
       this.pending--;
     });
@@ -78,99 +87,152 @@ var Coordinator = class {
     return this.store.all("binding").some((b) => b.state === "PAUSED");
   }
   save(t) {
-    if (this.store.get("task", t.task_id)?.cancelled) t.cancelled = true;
+    if (this.store.get("task", t.task_id)?.cancelled) {
+      t.cancelled = true;
+      if (["QUEUED", "PRECHECK", "RUNNING", "VERIFYING"].includes(t.status))
+        t.status = t.operation_id && ["DISPATCHING", "VERIFYING", "OUTCOME_UNKNOWN"].includes(
+          this.operation(t.operation_id).status
+        ) ? "OUTCOME_UNKNOWN" : "CANCELLED";
+    }
     t.updated_at = now();
     this.store.put("task", t);
   }
   envelope(t) {
-    return { schema_version: "1", ...t, args: void 0, fingerprint: void 0, human_action: ["NEEDS_HUMAN", "NEEDS_LOGIN"].includes(t.status) ? { message: "\u8BF7\u5728\u7ED1\u5B9A\u7A97\u53E3\u5904\u7406\u9A8C\u8BC1\u6216\u767B\u5F55\uFF0C\u7136\u540E\u8C03\u7528 bridge_resume_task\u3002", resume_tool: "bridge_resume_task" } : void 0 };
+    return {
+      schema_version: "1",
+      ...t,
+      args: void 0,
+      fingerprint: void 0,
+      human_action: ["NEEDS_HUMAN", "NEEDS_LOGIN"].includes(t.status) ? {
+        message: "\u8BF7\u5728\u7ED1\u5B9A\u7A97\u53E3\u5904\u7406\u9A8C\u8BC1\u6216\u767B\u5F55\uFF0C\u7136\u540E\u8C03\u7528 bridge_resume_task\u3002",
+        resume_tool: "bridge_resume_task"
+      } : void 0
+    };
   }
   async call(tool, a) {
-    if (tool === "bridge_doctor") return { schema_version: "1", platform: process.platform, node: process.version, write_mode: this.store.get("config", "write")?.enabled ? "trusted-host" : "disabled", adapters: await Promise.all(Object.values(this.adapters).map((x) => x.doctor())), pending: this.queue.pending };
-    if (tool === "bridge_bind") return this.queue.run(async () => {
-      if (this.paused()) throw new BridgeError("RESOURCE_BUSY", "\u4EBA\u5DE5\u63A5\u7BA1\u672A\u89E3\u9664");
-      const adapter = this.adapters[a.channel];
-      const existing = this.store.all("binding").find((b3) => b3.channel === a.channel && b3.state !== "CLOSED");
-      if (existing) throw new BridgeError("RESOURCE_BUSY", "\u540C\u6E20\u9053\u5DF2\u6709\u7ED1\u5B9A\uFF0C\u8BF7\u5148\u6838\u5BF9\u6216\u89E3\u9664");
-      const data = await adapter.bind(a);
-      const b2 = { ...data, binding_id: id("binding"), generation: 1, state: "READY", created_at: now() };
-      this.store.put("binding", b2);
-      return { schema_version: "1", binding: b2 };
-    });
+    if (tool === "bridge_doctor")
+      return {
+        schema_version: "1",
+        coordinator_pid: process.pid,
+        platform: process.platform,
+        node: process.version,
+        write_mode: this.store.get("config", "write")?.enabled ? "trusted-host" : "disabled",
+        adapters: await Promise.all(Object.values(this.adapters).map((x) => x.doctor())),
+        pending: this.queue.pending
+      };
+    if (tool === "bridge_bind")
+      return this.queue.run(async () => {
+        if (this.paused()) throw new BridgeError("RESOURCE_BUSY", "\u4EBA\u5DE5\u63A5\u7BA1\u672A\u89E3\u9664");
+        const adapter = this.adapters[a.channel];
+        const existing = this.store.all("binding").find((b3) => b3.channel === a.channel && b3.state !== "CLOSED");
+        if (existing) throw new BridgeError("RESOURCE_BUSY", "\u540C\u6E20\u9053\u5DF2\u6709\u7ED1\u5B9A\uFF0C\u8BF7\u5148\u6838\u5BF9\u6216\u89E3\u9664");
+        const data = await adapter.bind(a);
+        const b2 = {
+          ...data,
+          binding_id: id("binding"),
+          generation: 1,
+          state: "READY",
+          created_at: now()
+        };
+        this.store.put("binding", b2);
+        return { schema_version: "1", binding: b2 };
+      });
     if (tool === "bridge_get_task") {
-      const t2 = a.task_id ? this.task(a.task_id) : this.store.all("task").find((t3) => t3.binding_id === a.binding_id && t3.client_request_id === a.client_request_id);
+      const t2 = a.task_id ? this.task(a.task_id) : this.store.all("task").find(
+        (t3) => t3.binding_id === a.binding_id && t3.client_request_id === a.client_request_id
+      );
       if (!t2) throw new BridgeError("TASK_NOT_FOUND");
       return this.envelope(t2);
     }
-    if (tool === "bridge_inspect_session") return this.queue.run(async () => {
-      const b2 = this.binding(a.binding_id);
-      const o = await this.adapter(b2).inspect(b2);
-      assertObservation(b2, o);
-      return { schema_version: "1", binding: b2, observation: o };
-    });
-    if (tool === "bridge_unbind") return this.queue.run(async () => {
-      const b2 = this.binding(a.binding_id);
-      if (this.store.all("task").some((t2) => t2.binding_id === b2.binding_id && ["RUNNING", "VERIFYING", "PRECHECK"].includes(t2.status))) throw new BridgeError("RESOURCE_BUSY");
-      await this.adapter(b2).unbind?.(b2);
-      b2.state = "CLOSED";
-      b2.generation++;
-      this.store.put("binding", b2);
-      for (const t2 of this.store.all("task").filter((t3) => t3.binding_id === b2.binding_id && ["QUEUED", "NEEDS_HUMAN", "NEEDS_LOGIN", "NEEDS_REBIND"].includes(t3.status))) {
-        t2.status = "CANCELLED";
-        t2.cancelled = true;
-        this.save(t2);
-      }
-      this.scheduleQueued();
-      return { schema_version: "1", unbound: true, user_window_closed: false };
-    });
+    if (tool === "bridge_inspect_session")
+      return this.queue.run(async () => {
+        const b2 = this.binding(a.binding_id);
+        const o = await this.adapter(b2).inspect(b2);
+        assertObservation(b2, o);
+        return { schema_version: "1", binding: b2, observation: o };
+      });
+    if (tool === "bridge_unbind")
+      return this.queue.run(async () => {
+        const b2 = this.binding(a.binding_id);
+        if (this.store.all("task").some(
+          (t2) => t2.binding_id === b2.binding_id && ["RUNNING", "VERIFYING", "PRECHECK"].includes(t2.status)
+        ))
+          throw new BridgeError("RESOURCE_BUSY");
+        await this.adapter(b2).unbind?.(b2);
+        b2.state = "CLOSED";
+        b2.generation++;
+        this.store.put("binding", b2);
+        for (const t2 of this.store.all("task").filter(
+          (t3) => t3.binding_id === b2.binding_id && ["QUEUED", "NEEDS_HUMAN", "NEEDS_LOGIN", "NEEDS_REBIND"].includes(t3.status)
+        )) {
+          t2.status = "CANCELLED";
+          t2.cancelled = true;
+          this.save(t2);
+        }
+        this.scheduleQueued();
+        return { schema_version: "1", unbound: true, user_window_closed: false };
+      });
     if (tool === "bridge_cancel_task") {
       const t2 = this.task(a.task_id);
       if (["SUCCEEDED", "FAILED", "CANCELLED"].includes(t2.status)) return this.envelope(t2);
       t2.cancelled = true;
-      t2.status = t2.operation_id && ["DISPATCHING", "VERIFYING", "OUTCOME_UNKNOWN"].includes(this.operation(t2.operation_id).status) ? "OUTCOME_UNKNOWN" : "CANCELLED";
+      t2.status = t2.operation_id && ["DISPATCHING", "VERIFYING", "OUTCOME_UNKNOWN"].includes(
+        this.operation(t2.operation_id).status
+      ) ? "OUTCOME_UNKNOWN" : "CANCELLED";
       this.save(t2);
       return this.envelope(t2);
     }
-    if (tool === "bridge_resume_task") return this.queue.run(async () => {
-      const t2 = this.task(a.task_id);
-      if (!["NEEDS_LOGIN", "NEEDS_HUMAN", "NEEDS_REBIND", "OUTCOME_UNKNOWN", "CANCELLED"].includes(t2.status)) return this.envelope(t2);
-      const b2 = this.binding(t2.binding_id);
-      const o = await this.adapter(b2).inspect(b2);
-      assertObservation(b2, o);
-      b2.state = "READY";
-      b2.generation++;
-      this.store.put("binding", b2);
-      t2.assisted = true;
-      if (!t2.cancelled && t2.status !== "OUTCOME_UNKNOWN") t2.status = "QUEUED";
-      this.save(t2);
-      this.scheduleQueued();
-      return this.envelope(t2);
-    });
-    if (tool === "bridge_reconcile_operation") return this.queue.run(async () => {
-      const op = this.operation(a.operation_id);
-      const b2 = this.binding(op.binding_id);
-      if (op.status === "CONFIRMED") return { schema_version: "1", operation: this.publicOp(op) };
-      if (!["OUTCOME_UNKNOWN", "VERIFYING"].includes(op.status)) throw new BridgeError("INVALID_OPERATION_STATE");
-      const o = await this.adapter(b2).inspect(b2);
-      assertObservation(b2, o);
-      const r = await this.adapter(b2).reconcile(op, b2);
-      op.history.push({ at: now(), confirmed: r.confirmed === true });
-      if (r.confirmed === true) {
-        op.status = "CONFIRMED";
-        op.evidence = r;
-        if (op.dispatch_task_id) {
-          const t2 = this.task(op.dispatch_task_id);
-          t2.status = "SUCCEEDED";
-          t2.result = { operation: this.publicOp(op) };
-          this.save(t2);
+    if (tool === "bridge_resume_task")
+      return this.queue.run(async () => {
+        let t2 = this.task(a.task_id);
+        if (!["NEEDS_LOGIN", "NEEDS_HUMAN", "NEEDS_REBIND", "OUTCOME_UNKNOWN", "CANCELLED"].includes(
+          t2.status
+        ))
+          return this.envelope(t2);
+        const b2 = this.binding(t2.binding_id);
+        if (b2.state === "READY" && ["OUTCOME_UNKNOWN", "CANCELLED"].includes(t2.status))
+          return this.envelope(t2);
+        const o = await this.adapter(b2).inspect(b2);
+        assertObservation(b2, o);
+        b2.state = "READY";
+        b2.generation++;
+        this.store.put("binding", b2);
+        t2 = this.task(t2.task_id);
+        t2.assisted = true;
+        if (!t2.cancelled && t2.status !== "OUTCOME_UNKNOWN") t2.status = "QUEUED";
+        this.save(t2);
+        this.scheduleQueued();
+        return this.envelope(t2);
+      });
+    if (tool === "bridge_reconcile_operation")
+      return this.queue.run(async () => {
+        const op = this.operation(a.operation_id);
+        const b2 = this.binding(op.binding_id);
+        if (op.status === "CONFIRMED") return { schema_version: "1", operation: this.publicOp(op) };
+        if (!["OUTCOME_UNKNOWN", "VERIFYING"].includes(op.status))
+          throw new BridgeError("INVALID_OPERATION_STATE");
+        const o = await this.adapter(b2).inspect(b2);
+        assertObservation(b2, o);
+        if (!op.payload) throw new BridgeError("PAYLOAD_EXPIRED");
+        const r = await this.adapter(b2).reconcile(op, b2);
+        op.history.push({ at: now(), confirmed: r.confirmed === true });
+        if (r.confirmed === true) {
+          op.status = "CONFIRMED";
+          op.evidence = r;
+          if (op.dispatch_task_id) {
+            const t2 = this.task(op.dispatch_task_id);
+            t2.status = "SUCCEEDED";
+            t2.result = { operation: this.publicOp(op) };
+            this.save(t2);
+          }
         }
-      }
-      op.updated_at = now();
-      this.store.put("operation", op);
-      return { schema_version: "1", operation: this.publicOp(op) };
-    });
+        op.updated_at = now();
+        this.store.put("operation", op);
+        return { schema_version: "1", operation: this.publicOp(op) };
+      });
     const b = this.binding(a.binding_id);
-    if (tool.startsWith("xhs_") && b.channel !== "xiaohongshu_web" || tool.startsWith("wechat_") && b.channel !== "wechat_macos") throw new BridgeError("CHANNEL_MISMATCH");
+    if (tool.startsWith("xhs_") && b.channel !== "xiaohongshu_web" || tool.startsWith("wechat_") && b.channel !== "wechat_macos")
+      throw new BridgeError("CHANNEL_MISMATCH");
     const fp = hash({ tool, args: a });
     const prior = this.store.all("task").find((t2) => t2.binding_id === b.binding_id && t2.client_request_id === a.client_request_id);
     if (prior) {
@@ -180,15 +242,35 @@ var Coordinator = class {
     const submitting = tool === "xhs_publish_post" || tool === "xhs_submit_comment" || tool === "wechat_send_message";
     if (submitting) {
       const op = this.operation(a.operation_id);
-      if (op.binding_id !== b.binding_id || op.kind !== { xhs_publish_post: "post", xhs_submit_comment: "comment", wechat_send_message: "message" }[tool]) throw new BridgeError("SCOPE_MISMATCH");
+      if (op.binding_id !== b.binding_id || op.kind !== {
+        xhs_publish_post: "post",
+        xhs_submit_comment: "comment",
+        wechat_send_message: "message"
+      }[tool])
+        throw new BridgeError("SCOPE_MISMATCH");
       if (op.payload_version !== a.payload_version) throw new BridgeError("PAYLOAD_CHANGED");
       if (op.dispatch_task_id) return this.envelope(this.task(op.dispatch_task_id));
       if (op.status !== "PREPARED") throw new BridgeError("INVALID_OPERATION_STATE");
-      if (!this.store.get("config", "write")?.enabled) throw new BridgeError("WRITES_DISABLED", "\u8BF7\u5728\u672C\u5730\u5F00\u542F trusted-host \u5199\u5165\u6A21\u5F0F");
-      if (a.scope.action !== tool || a.scope.target_ref !== op.target_ref || a.scope.payload_digest !== op.digest) throw new BridgeError("SCOPE_MISMATCH");
-      if (op.binding_generation !== b.generation) throw new BridgeError("STALE_PREVIEW", "\u7ED1\u5B9A\u4EE3\u6B21\u6539\u53D8\uFF0C\u8BF7\u91CD\u65B0\u51C6\u5907\u8349\u7A3F");
+      if (!this.store.get("config", "write")?.enabled)
+        throw new BridgeError("WRITES_DISABLED", "\u8BF7\u5728\u672C\u5730\u5F00\u542F trusted-host \u5199\u5165\u6A21\u5F0F");
+      if (a.scope.action !== tool || a.scope.target_ref !== op.target_ref || a.scope.payload_digest !== op.digest)
+        throw new BridgeError("SCOPE_MISMATCH");
+      if (op.binding_generation !== b.generation)
+        throw new BridgeError("STALE_PREVIEW", "\u7ED1\u5B9A\u4EE3\u6B21\u6539\u53D8\uFF0C\u8BF7\u91CD\u65B0\u51C6\u5907\u8349\u7A3F");
     }
-    const t = { task_id: id("task"), binding_id: b.binding_id, client_request_id: a.client_request_id, fingerprint: fp, tool, args: a, status: "QUEUED", checkpoint: "accepted", created_at: now(), updated_at: now(), ...submitting ? { operation_id: a.operation_id } : {} };
+    const t = {
+      task_id: id("task"),
+      binding_id: b.binding_id,
+      client_request_id: a.client_request_id,
+      fingerprint: fp,
+      tool,
+      args: a,
+      status: "QUEUED",
+      checkpoint: "accepted",
+      created_at: now(),
+      updated_at: now(),
+      ...submitting ? { operation_id: a.operation_id } : {}
+    };
     this.store.atomic(() => {
       if (submitting) {
         const op = this.operation(a.operation_id);
@@ -205,7 +287,8 @@ var Coordinator = class {
     return { ...op, payload: void 0, prepared: void 0 };
   }
   scheduleQueued() {
-    for (const t of this.store.all("task").filter((t2) => t2.status === "QUEUED")) this.enqueue(t);
+    for (const t of this.store.all("task").filter((t2) => t2.status === "QUEUED"))
+      this.enqueue(t);
   }
   enqueue(original) {
     void this.queue.run(async () => {
@@ -232,13 +315,22 @@ var Coordinator = class {
         this.save(t);
         if (t.operation_id) {
           const op = this.operation(t.operation_id);
-          if (op.status !== "PREPARED" || op.binding_generation !== b.generation) throw new BridgeError("STALE_PREVIEW");
-          if (!this.store.get("config", "write")?.enabled) throw new BridgeError("WRITES_DISABLED");
-          if (op.scope?.action !== t.tool || op.scope?.target_ref !== op.target_ref || op.scope?.payload_digest !== op.digest) throw new BridgeError("SCOPE_MISMATCH");
-          check();
-          op.status = "DISPATCHING";
-          op.updated_at = now();
-          this.store.put("operation", op);
+          if (op.status !== "PREPARED" || op.binding_generation !== b.generation)
+            throw new BridgeError("STALE_PREVIEW");
+          this.store.atomic(() => {
+            const current = this.operation(op.operation_id);
+            if (current.status !== "PREPARED" || !current.payload)
+              throw new BridgeError("STALE_PREVIEW");
+            Object.assign(op, current);
+            if (!this.store.get("config", "write")?.enabled)
+              throw new BridgeError("WRITES_DISABLED");
+            if (op.scope?.action !== t.tool || op.scope?.target_ref !== op.target_ref || op.scope?.payload_digest !== op.digest)
+              throw new BridgeError("SCOPE_MISMATCH");
+            check();
+            op.status = "DISPATCHING";
+            op.updated_at = now();
+            this.store.put("operation", op);
+          });
           t.checkpoint = "dispatch_persisted";
           this.save(t);
           const r = await adapter.dispatch(op, b, check);
@@ -256,13 +348,34 @@ var Coordinator = class {
           const kind = t.tool === "xhs_prepare_post" ? "post" : t.tool === "xhs_prepare_comment" ? "comment" : "message";
           const r = await adapter.prepare(kind, t.args.payload, b, check);
           check();
-          const op = { operation_id: id("operation"), binding_id: b.binding_id, kind, payload: t.args.payload, prepared: r.checkpoint, payload_version: 1, digest: hash(t.args.payload), target_ref: r.target_ref, binding_generation: b.generation, status: "PREPARED", history: [], created_at: now(), updated_at: now() };
+          const op = {
+            operation_id: id("operation"),
+            binding_id: b.binding_id,
+            kind,
+            payload: t.args.payload,
+            prepared: r.checkpoint,
+            payload_version: 1,
+            digest: hash(t.args.payload),
+            target_ref: r.target_ref,
+            binding_generation: b.generation,
+            status: "PREPARED",
+            history: [],
+            created_at: now(),
+            updated_at: now()
+          };
           this.store.put("operation", op);
           t.result = { operation: this.publicOp(op), preview: r.preview };
-        } else t.result = await adapter.execute(t.tool, t.args, b, (step) => {
-          t.checkpoint = step;
-          this.save(t);
-        }, check);
+        } else
+          t.result = await adapter.execute(
+            t.tool,
+            t.args,
+            b,
+            (step) => {
+              t.checkpoint = step;
+              this.save(t);
+            },
+            check
+          );
         check();
         t.status = "SUCCEEDED";
         t.checkpoint = "completed";
@@ -284,13 +397,20 @@ var Coordinator = class {
           t.status = "OUTCOME_UNKNOWN";
           b.state = "PAUSED";
         } else if (code === "CANCELLED") t.status = "CANCELLED";
-        else if (["HUMAN_VERIFICATION_REQUIRED", "RECIPIENT_AMBIGUOUS", "ACCOUNT_UNVERIFIED", "POLICY_LIMITED"].includes(code)) {
+        else if ([
+          "HUMAN_VERIFICATION_REQUIRED",
+          "RECIPIENT_AMBIGUOUS",
+          "ACCOUNT_UNVERIFIED",
+          "POLICY_LIMITED"
+        ].includes(code)) {
           t.status = "NEEDS_HUMAN";
           b.state = "PAUSED";
         } else if (code === "AUTH_REQUIRED") {
           t.status = "NEEDS_LOGIN";
           b.state = "PAUSED";
-        } else if (["TARGET_CHANGED", "TARGET_CLOSED", "ACCOUNT_MISMATCH", "BRIDGE_DISCONNECTED"].includes(code)) {
+        } else if (["TARGET_CHANGED", "TARGET_CLOSED", "ACCOUNT_MISMATCH", "BRIDGE_DISCONNECTED"].includes(
+          code
+        )) {
           t.status = "NEEDS_REBIND";
           b.state = "NEEDS_REBIND";
         } else t.status = "FAILED";
@@ -316,7 +436,8 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 var statePath = () => process.env.SESSION_BRIDGE_HOME || join(homedir(), "Library", "Application Support", "codex-session-bridge");
 function secureDir(path2) {
-  if (existsSync(path2) && (lstatSync(path2).isSymbolicLink() || !lstatSync(path2).isDirectory() || lstatSync(path2).uid !== process.getuid?.())) throw new Error("\u4E0D\u5B89\u5168\u7684\u6570\u636E\u76EE\u5F55");
+  if (existsSync(path2) && (lstatSync(path2).isSymbolicLink() || !lstatSync(path2).isDirectory() || lstatSync(path2).uid !== process.getuid?.()))
+    throw new Error("\u4E0D\u5B89\u5168\u7684\u6570\u636E\u76EE\u5F55");
   mkdirSync(path2, { recursive: true, mode: 448 });
   chmodSync(path2, 448);
 }
@@ -325,10 +446,18 @@ var Store = class {
     this.path = path2;
     secureDir(path2);
     const file = join(path2, "tasks.sqlite");
-    if (existsSync(file) && (lstatSync(file).isSymbolicLink() || lstatSync(file).uid !== process.getuid?.())) throw new Error("\u4E0D\u5B89\u5168\u7684\u6570\u636E\u5E93");
+    if (existsSync(file) && (lstatSync(file).isSymbolicLink() || lstatSync(file).uid !== process.getuid?.()))
+      throw new Error("\u4E0D\u5B89\u5168\u7684\u6570\u636E\u5E93");
     this.db = new DatabaseSync(file);
     chmodSync(file, 384);
-    this.db.exec("PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL; PRAGMA secure_delete=ON; CREATE TABLE IF NOT EXISTS records(kind TEXT NOT NULL,id TEXT NOT NULL,data TEXT NOT NULL,PRIMARY KEY(kind,id)); PRAGMA user_version=1;");
+    const version = this.db.prepare("PRAGMA user_version").get().user_version;
+    if (version > 1) {
+      this.db.close();
+      throw new Error("STORAGE_SCHEMA_UNSUPPORTED");
+    }
+    this.db.exec(
+      "PRAGMA busy_timeout=5000; PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL; PRAGMA secure_delete=ON; CREATE TABLE IF NOT EXISTS records(kind TEXT NOT NULL,id TEXT NOT NULL,data TEXT NOT NULL,PRIMARY KEY(kind,id)); PRAGMA user_version=1;"
+    );
   }
   path;
   db;
@@ -337,11 +466,27 @@ var Store = class {
     return r ? JSON.parse(r.data) : void 0;
   }
   all(kind) {
-    return this.db.prepare("SELECT data FROM records WHERE kind=?").all(kind).map((r) => JSON.parse(r.data));
+    return this.db.prepare("SELECT data FROM records WHERE kind=?").all(kind).map(
+      (r) => JSON.parse(r.data)
+    );
   }
   put(kind, v) {
     const key = kind === "binding" ? "binding_id" : kind === "task" ? "task_id" : kind === "operation" ? "operation_id" : "id";
-    this.db.prepare("INSERT INTO records VALUES(?,?,?) ON CONFLICT(kind,id) DO UPDATE SET data=excluded.data").run(kind, v[key], JSON.stringify(v));
+    const old = this.get(kind, v[key]);
+    if (kind === "operation" && (old?.payload_forgotten || old?.payload_purged)) {
+      v.payload = null;
+      v.prepared = void 0;
+      v.payload_forgotten = true;
+      if (old.status === "EXPIRED") v.status = "EXPIRED";
+    }
+    if (kind === "task" && old?.payload_forgotten) {
+      v.args = {};
+      v.result = { payload_forgotten: true };
+      v.payload_forgotten = true;
+    }
+    this.db.prepare(
+      "INSERT INTO records VALUES(?,?,?) ON CONFLICT(kind,id) DO UPDATE SET data=excluded.data"
+    ).run(kind, v[key], JSON.stringify(v));
   }
   atomic(f) {
     this.db.exec("BEGIN IMMEDIATE");
@@ -363,26 +508,60 @@ var Store = class {
           this.put("binding", b);
         }
       }
-      for (const op of this.all("operation")) if (["DISPATCHING", "VERIFYING"].includes(op.status)) {
-        op.status = "OUTCOME_UNKNOWN";
-        this.put("operation", op);
-      }
-      for (const t of this.all("task")) if (["QUEUED", "PRECHECK", "RUNNING", "VERIFYING"].includes(t.status)) {
-        t.status = t.operation_id && this.get("operation", t.operation_id)?.status === "OUTCOME_UNKNOWN" ? "OUTCOME_UNKNOWN" : "NEEDS_REBIND";
-        this.put("task", t);
-      }
+      for (const op of this.all("operation"))
+        if (["DISPATCHING", "VERIFYING"].includes(op.status)) {
+          op.status = "OUTCOME_UNKNOWN";
+          this.put("operation", op);
+        }
+      for (const t of this.all("task"))
+        if (["QUEUED", "PRECHECK", "RUNNING", "VERIFYING"].includes(t.status)) {
+          t.status = t.operation_id && this.get("operation", t.operation_id)?.status === "OUTCOME_UNKNOWN" ? "OUTCOME_UNKNOWN" : "NEEDS_REBIND";
+          this.put("task", t);
+        }
     });
   }
   purge(days = 7) {
     const cutoff = Date.now() - days * 864e5;
     let removed = 0;
     this.atomic(() => {
-      for (const kind of ["task", "operation"]) for (const row of this.all(kind)) if (Date.parse(row.updated_at) < cutoff && ["SUCCEEDED", "FAILED", "CANCELLED", "CONFIRMED", "FAILED_BEFORE_DISPATCH"].includes(row.status)) {
-        this.db.prepare("DELETE FROM records WHERE kind=? AND id=?").run(kind, row.task_id || row.operation_id);
-        removed++;
-      }
+      for (const kind of ["task", "operation"])
+        for (const row of this.all(kind))
+          if (Date.parse(row.updated_at) < cutoff && ["SUCCEEDED", "FAILED", "CANCELLED", "CONFIRMED", "FAILED_BEFORE_DISPATCH"].includes(
+            row.status
+          )) {
+            if (row.payload_purged) continue;
+            if (kind === "task") {
+              row.args = {};
+              row.result = { payload_purged: true };
+            } else {
+              row.payload = null;
+              row.prepared = void 0;
+            }
+            row.payload_purged = true;
+            this.put(kind, row);
+            removed++;
+          }
     });
     return removed;
+  }
+  forgetPayload(operation_id) {
+    this.atomic(() => {
+      const op = this.get("operation", operation_id);
+      if (!op) throw new Error("OPERATION_NOT_FOUND");
+      if (["DISPATCHING", "VERIFYING"].includes(op.status)) throw new Error("RESOURCE_BUSY");
+      op.payload = null;
+      op.prepared = void 0;
+      op.payload_forgotten = true;
+      if (op.status === "PREPARED") op.status = "EXPIRED";
+      this.put("operation", op);
+      for (const task2 of this.all("task"))
+        if (task2.result?.operation?.operation_id === operation_id || task2.operation_id === operation_id) {
+          task2.args = {};
+          task2.result = { payload_forgotten: true };
+          task2.payload_forgotten = true;
+          this.put("task", task2);
+        }
+    });
   }
   close() {
     this.db.close();
@@ -411,27 +590,52 @@ async function browserProgram(p) {
       return es[0];
     };
     const value = (e) => String(e.value ?? e.innerText ?? "");
-    const profile = list('a.user[href*="/user/profile/"], .user a[href*="/user/profile/"], .side-bar a[href*="/user/profile/"]');
-    const account = profile.length === 1 ? profile[0].getAttribute("href")?.match(/\/user\/profile\/([a-f0-9]{24})/)?.[1] : void 0;
-    const verification = list('.captcha-container, #captcha, [role="dialog"][aria-label*="\u9A8C\u8BC1"], iframe[src*="captcha"], .verify-modal').length > 0;
-    const login = list(".login-container, .login-modal, .qrcode-login").length > 0;
-    const blocker = verification ? "HUMAN_VERIFICATION_REQUIRED" : login ? "AUTH_REQUIRED" : void 0;
+    const readAccount = () => {
+      const links = list(
+        'a.user[href*="/user/profile/"], .user a[href*="/user/profile/"], .side-bar a[href*="/user/profile/"]'
+      );
+      return links.length === 1 ? links[0].getAttribute("href")?.match(/\/user\/profile\/([a-f0-9]{24})/)?.[1] : void 0;
+    };
+    const blocked = () => location.pathname.startsWith("/website-login/captcha") || list(
+      '.captcha-container, #captcha, [role="dialog"][aria-label*="\u9A8C\u8BC1"], iframe[src*="captcha"], .verify-modal'
+    ).length > 0 ? "HUMAN_VERIFICATION_REQUIRED" : list(".login-container, .login-modal, .qrcode-login, #login-btn").length > 0 ? "AUTH_REQUIRED" : void 0;
+    const account = readAccount();
     const w = window;
     const documentKey = "__codexSessionBridgeDocument";
     if (!w[documentKey]) w[documentKey] = crypto.randomUUID();
-    const accountHash = account ? Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(account))))).map((n) => n.toString(16).padStart(2, "0")).join("") : void 0;
-    const observation = { origin: location.origin, account: accountHash, document: w[documentKey], blocker };
-    if (p.action === "inspect") return observation;
-    if (blocker) throw new Error(blocker);
-    if (p.guard?.document !== w[documentKey] || p.guard?.origin !== location.origin || p.guard?.account && p.guard.account !== accountHash) throw new Error("TARGET_CHANGED");
-    const fresh = () => {
-      if (Date.now() > p.deadline) throw new Error("TARGET_CHANGED");
+    const accountHash = account ? Array.from(
+      new Uint8Array(
+        await crypto.subtle.digest(
+          "SHA-256",
+          new TextEncoder().encode(JSON.stringify(account))
+        )
+      )
+    ).map((n) => n.toString(16).padStart(2, "0")).join("") : void 0;
+    const observation = {
+      origin: location.origin,
+      account: accountHash,
+      document: w[documentKey],
+      blocker: blocked()
     };
+    if (readAccount() !== account) throw new Error("TARGET_CHANGED");
+    if (p.action === "inspect") return observation;
+    if (observation.blocker) throw new Error(observation.blocker);
+    if (p.guard?.document !== w[documentKey] || p.guard?.origin !== location.origin || p.guard?.account && p.guard.account !== accountHash)
+      throw new Error("TARGET_CHANGED");
+    const fresh = () => {
+      if (Date.now() > p.deadline || readAccount() !== account || p.guard?.document !== w[documentKey] || p.guard?.origin !== location.origin)
+        throw new Error("TARGET_CHANGED");
+      const reason = blocked();
+      if (reason) throw new Error(reason);
+    };
+    fresh();
     const set = (el, text2) => {
       fresh();
       if (el.isContentEditable) {
         el.textContent = text2;
-        el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text2 }));
+        el.dispatchEvent(
+          new InputEvent("input", { bubbles: true, inputType: "insertText", data: text2 })
+        );
       } else {
         const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
         Object.getOwnPropertyDescriptor(proto, "value").set.call(el, text2);
@@ -440,8 +644,12 @@ async function browserProgram(p) {
       }
       if (value(el) !== text2) throw new Error("UI_CHANGED");
     };
-    const noteId = () => location.pathname.match(/\/(?:explore|discovery\/item)\/([a-f0-9]{24})/)?.[1] || list('.note-detail-mask a[href*="/explore/"]').map((e) => e.getAttribute("href")?.match(/\/explore\/([a-f0-9]{24})/)?.[1]).find(Boolean);
-    const buttons = (label) => list('button,[role="button"],.publishBtn').filter((e) => e.innerText.trim() === label && !e.disabled);
+    const noteId = () => location.pathname.match(
+      /\/(?:explore|search_result|note|discovery\/item)\/([a-f0-9]{24})/
+    )?.[1] || list('.note-detail-mask a[href*="/explore/"]').map((e) => e.getAttribute("href")?.match(/\/explore\/([a-f0-9]{24})/)?.[1]).find(Boolean);
+    const buttons = (label) => list('button,[role="button"],.publishBtn').filter(
+      (e) => e.innerText.trim() === label && !e.disabled
+    );
     const press = (label) => {
       fresh();
       const b = buttons(label);
@@ -454,12 +662,18 @@ async function browserProgram(p) {
       const old = list('section.note-item, .note-item, [data-testid="note-card"]');
       w.__csbSearch = { query: p.query, old: old.map((e) => e.outerHTML).join(""), changed: false };
       const observer = new MutationObserver((records) => {
-        if (records.some((r) => Array.from(r.addedNodes).concat(Array.from(r.removedNodes)).some((n) => n instanceof Element && (n.matches('section.note-item,.note-item,[data-testid="note-card"]') || n.querySelector('section.note-item,.note-item,[data-testid="note-card"]'))))) w.__csbSearch.changed = true;
+        if (records.some(
+          (r) => Array.from(r.addedNodes).concat(Array.from(r.removedNodes)).some(
+            (n) => n instanceof Element && (n.matches('section.note-item,.note-item,[data-testid="note-card"]') || n.querySelector('section.note-item,.note-item,[data-testid="note-card"]'))
+          )
+        ))
+          w.__csbSearch.changed = true;
       });
       observer.observe(document.body, { childList: true, subtree: true });
       w.__csbObserver?.disconnect();
       w.__csbObserver = observer;
-      const submit = list('.search-icon, .input-button, button[aria-label="\u641C\u7D22"]');
+      const primary = list(".search-icon");
+      const submit = primary.length ? primary : list('.input-button, button[aria-label="\u641C\u7D22"]');
       if (submit.length !== 1) throw new Error("UI_CHANGED");
       fresh();
       submit[0].click();
@@ -469,18 +683,36 @@ async function browserProgram(p) {
       const state = w.__csbSearch;
       const field = one('input#search-input, input[placeholder="\u641C\u7D22\u5C0F\u7EA2\u4E66"]');
       const cards = list('section.note-item, .note-item, [data-testid="note-card"]');
-      if (!state || state.query !== p.query || value(field) !== p.query || new URL(location.href).searchParams.get("keyword") !== p.query || cards.map((e) => e.outerHTML).join("") === state.old) return { pending: true };
+      if (!state || state.query !== p.query || value(field) !== p.query || new URL(location.href).searchParams.get("keyword") !== p.query || cards.map((e) => e.outerHTML).join("") === state.old)
+        return { pending: true };
       const results = cards.map((e) => {
-        const a = e.querySelector('a[href*="/explore/"], a[href*="/discovery/item/"]');
+        const a = e.querySelector(
+          'a[href*="/explore/"], a[href*="/search_result/"], a[href*="/note/"], a[href*="/discovery/item/"]'
+        );
         const href = a?.getAttribute("href") || "";
-        return { note_id: href.match(/\/(?:explore|discovery\/item)\/([a-f0-9]{24})/)?.[1], title: (e.querySelector(".title")?.textContent || e.textContent || "").trim().slice(0, 500) };
+        return {
+          note_id: href.match(
+            /\/(?:explore|search_result|note|discovery\/item)\/([a-f0-9]{24})/
+          )?.[1],
+          title: (e.querySelector(".title")?.textContent || e.textContent || "").trim().slice(0, 500)
+        };
       }).filter((x) => x.note_id).slice(0, p.limit);
       if (!results.length) return { pending: true };
-      return { query: p.query, results, partial: true, source: "visible_dom", observed_at: (/* @__PURE__ */ new Date()).toISOString() };
+      return {
+        query: p.query,
+        results,
+        partial: true,
+        source: "visible_dom",
+        observed_at: (/* @__PURE__ */ new Date()).toISOString()
+      };
     }
     if (p.action === "note_open") {
       if (noteId() === p.note_id) return { opened: true };
-      const a = list('a[href*="/explore/"],a[href*="/discovery/item/"]').filter((e) => e.getAttribute("href")?.match(/\/(?:explore|discovery\/item)\/([a-f0-9]{24})/)?.[1] === p.note_id);
+      const a = list(
+        'a[href*="/explore/"],a[href*="/search_result/"],a[href*="/note/"],a[href*="/discovery/item/"]'
+      ).filter(
+        (e) => e.getAttribute("href")?.match(/\/(?:explore|search_result|note|discovery\/item)\/([a-f0-9]{24})/)?.[1] === p.note_id
+      );
       if (a.length !== 1) throw new Error("UI_CHANGED");
       fresh();
       a[0].click();
@@ -489,13 +721,31 @@ async function browserProgram(p) {
     if (p.action === "note_read") {
       if (noteId() !== p.note_id) return { pending: true };
       const body = one('#detail-desc, .note-scroller .desc, [data-testid="note-body"]');
-      return { note_id: p.note_id, title: list("#detail-title,.note-scroller .title")[0]?.textContent?.trim() || "", body: body.innerText.slice(0, 3e4), comments: list(".comment-item .content").slice(0, p.comment_limit).map((e) => e.innerText.slice(0, 3e3)), partial: true, source: "visible_dom", observed_at: (/* @__PURE__ */ new Date()).toISOString() };
+      return {
+        note_id: p.note_id,
+        title: list("#detail-title,.note-scroller .title")[0]?.textContent?.trim() || "",
+        body: body.innerText.slice(0, 3e4),
+        comments: list(".comment-item .content").slice(0, p.comment_limit).map((e) => e.innerText.slice(0, 3e3)),
+        partial: true,
+        source: "visible_dom",
+        observed_at: (/* @__PURE__ */ new Date()).toISOString()
+      };
     }
     if (p.action === "prepare_comment") {
       if (noteId() !== p.note_id) throw new Error("TARGET_CHANGED");
-      const field = one('.comment-input [contenteditable="true"], textarea.comment-input, #content-textarea');
+      const field = one(
+        '.comment-input [contenteditable="true"], textarea.comment-input, #content-textarea'
+      );
       set(field, p.body);
-      return { target_ref: p.note_id, preview: { note_id: p.note_id, body: value(field) }, checkpoint: { before_ids: list(".comment-item[id],.comment-item[data-comment-id]").map((e) => e.getAttribute("data-comment-id") || e.id) } };
+      return {
+        target_ref: p.note_id,
+        preview: { note_id: p.note_id, body: value(field) },
+        checkpoint: {
+          before_ids: list(".comment-item[id],.comment-item[data-comment-id]").map(
+            (e) => e.getAttribute("data-comment-id") || e.id
+          )
+        }
+      };
     }
     if (p.action === "prepare_post") {
       if (location.origin !== "https://creator.xiaohongshu.com") throw new Error("TARGET_CHANGED");
@@ -503,42 +753,100 @@ async function browserProgram(p) {
       set(one('.tiptap[contenteditable="true"],.ql-editor[contenteditable="true"]'), p.body);
       const images = list(".img-preview-area img, .upload-img-item img");
       if (images.length !== p.image_count) throw new Error("UI_CHANGED");
-      return { target_ref: "creator_post", preview: { title: p.title, body: p.body, image_count: images.length }, checkpoint: { image_sources: images.map((e) => e.src), before_ids: list(".publish-success [data-note-id]").map((e) => e.getAttribute("data-note-id")) } };
+      return {
+        target_ref: "creator_post",
+        preview: { title: p.title, body: p.body, image_count: images.length },
+        checkpoint: {
+          image_sources: images.map((e) => e.src),
+          before_ids: list(".publish-success [data-note-id]").map(
+            (e) => e.getAttribute("data-note-id")
+          )
+        }
+      };
     }
     if (p.action === "dispatch") {
+      if (!p.operation_id || !p.payload_digest) throw new Error("PAYLOAD_CHANGED");
+      w.__csbReceipts ||= {};
+      if (w.__csbReceipts[p.operation_id]) return { dispatched: true };
+      const before = p.kind === "comment" ? list(".comment-item[id],.comment-item[data-comment-id]").map(
+        (e) => e.getAttribute("data-comment-id") || e.id
+      ) : list(".publish-success [data-note-id]").map((e) => e.getAttribute("data-note-id"));
       if (p.kind === "comment") {
-        if (noteId() !== p.note_id || value(one('.comment-input [contenteditable="true"],textarea.comment-input,#content-textarea')) !== p.body) throw new Error("PAYLOAD_CHANGED");
+        if (noteId() !== p.note_id || value(
+          one('.comment-input [contenteditable="true"],textarea.comment-input,#content-textarea')
+        ) !== p.body)
+          throw new Error("PAYLOAD_CHANGED");
         press("\u53D1\u9001");
       } else {
-        if (location.origin !== "https://creator.xiaohongshu.com" || value(one('input[placeholder*="\u6807\u9898"]')) !== p.title || value(one('.tiptap[contenteditable="true"],.ql-editor[contenteditable="true"]')) !== p.body || JSON.stringify(list(".img-preview-area img,.upload-img-item img").map((e) => e.src)) !== JSON.stringify(p.prepared?.image_sources)) throw new Error("PAYLOAD_CHANGED");
+        if (location.origin !== "https://creator.xiaohongshu.com" || value(one('input[placeholder*="\u6807\u9898"]')) !== p.title || value(one('.tiptap[contenteditable="true"],.ql-editor[contenteditable="true"]')) !== p.body || JSON.stringify(
+          list(".img-preview-area img,.upload-img-item img").map(
+            (e) => e.src
+          )
+        ) !== JSON.stringify(p.prepared?.image_sources))
+          throw new Error("PAYLOAD_CHANGED");
         press("\u53D1\u5E03");
       }
-      return { dispatched: true };
-    }
-    if (p.action === "reconcile") {
-      const before = p.prepared?.before_ids;
-      if (!Array.isArray(before)) return { confirmed: false, reason: "\u7F3A\u5C11\u63D0\u4EA4\u524D\u5FEB\u7167" };
+      const receipt = {
+        operation_id: p.operation_id,
+        payload_digest: p.payload_digest,
+        document: w[documentKey],
+        account: accountHash,
+        confirmed: false
+      };
+      w.__csbReceipts[p.operation_id] = receipt;
+      await Promise.resolve();
+      fresh();
       if (p.kind === "comment") {
         if (noteId() !== p.note_id) throw new Error("TARGET_CHANGED");
-        const matched = list(".comment-item[id],.comment-item[data-comment-id]").filter((e) => {
+        const matches = list(".comment-item[id],.comment-item[data-comment-id]").filter((e) => {
           const key = e.getAttribute("data-comment-id") || e.id;
           const author = e.querySelector('a[href*="/user/profile/"]')?.getAttribute("href")?.match(/\/user\/profile\/([a-f0-9]{24})/)?.[1];
           return key && !before.includes(key) && author === account && e.querySelector(".content")?.textContent?.trim() === p.body;
         });
-        if (matched.length === 1) return { confirmed: true, confirmation: "ui_only", comment_id: matched[0].getAttribute("data-comment-id") || matched[0].id };
+        if (matches.length === 1)
+          Object.assign(receipt, {
+            confirmed: true,
+            confirmation: "ui_only",
+            comment_id: matches[0].getAttribute("data-comment-id") || matches[0].id
+          });
       } else {
-        const matched = list(".publish-success [data-note-id]").filter((e) => {
+        const matches = list(".publish-success [data-note-id]").filter((e) => {
           const key = e.getAttribute("data-note-id");
           return key && /^[a-f0-9]{24}$/.test(key) && !before.includes(key) && e.getAttribute("data-title") === p.title;
         });
-        if (matched.length === 1) return { confirmed: true, confirmation: "ui_only", note_id: matched[0].getAttribute("data-note-id") };
+        if (matches.length === 1)
+          Object.assign(receipt, {
+            confirmed: true,
+            confirmation: "ui_only",
+            note_id: matches[0].getAttribute("data-note-id")
+          });
       }
-      return { confirmed: false, reason: "\u672A\u89C2\u5BDF\u5230\u53EF\u5F52\u5C5E\u4E8E\u672C\u6B21\u64CD\u4F5C\u7684\u65B0\u7A33\u5B9A\u6807\u8BC6" };
+      return { dispatched: true };
+    }
+    if (p.action === "reconcile") {
+      const receipt = w.__csbReceipts?.[p.operation_id];
+      if (!receipt || receipt.payload_digest !== p.payload_digest || receipt.document !== w[documentKey] || receipt.account !== accountHash)
+        return { confirmed: false, reason: "\u7F3A\u5C11\u53EF\u5F52\u5C5E\u4E8E\u672C\u6B21\u70B9\u51FB\u7684\u56DE\u6267" };
+      return receipt.confirmed ? {
+        confirmed: true,
+        confirmation: "ui_only",
+        comment_id: receipt.comment_id,
+        note_id: receipt.note_id
+      } : { confirmed: false, reason: "\u70B9\u51FB\u540E\u672A\u6355\u83B7\u53EF\u9760\u754C\u9762\u56DE\u6267" };
     }
     throw new Error("UNSUPPORTED_ACTION");
   } catch (e) {
     const code = e instanceof Error ? e.message : "";
-    return { bridge_error: ["UI_CHANGED", "TARGET_CHANGED", "HUMAN_VERIFICATION_REQUIRED", "AUTH_REQUIRED", "PAYLOAD_CHANGED", "UNSUPPORTED_ACTION"].includes(code) ? code : "UI_CHANGED" };
+    return {
+      bridge_error: [
+        "UI_CHANGED",
+        "TARGET_CHANGED",
+        "HUMAN_VERIFICATION_REQUIRED",
+        "AUTH_REQUIRED",
+        "PAYLOAD_CHANGED",
+        "UNSUPPORTED_ACTION"
+      ].includes(code) ? code : "UI_CHANGED"
+    };
   }
 }
 
@@ -550,17 +858,21 @@ var BrowserAdapter = class {
   }
   root;
   async upstream() {
-    return import(pathToFileURL(join2(this.root, "node_modules/@jackwener/opencli/dist/src/browser/daemon-transport.js")).href);
+    return import(pathToFileURL(
+      join2(this.root, "node_modules/@jackwener/opencli/dist/src/browser/daemon-transport.js")
+    ).href);
   }
   async health(profile) {
     const api = await this.upstream();
     const h = await api.fetchDaemonStatus({ contextId: profile, timeout: 1e3 });
     if (h?.pending > 0) throw new BridgeError("RESOURCE_BUSY");
     if (!h?.extensionConnected) throw new BridgeError("BRIDGE_DISCONNECTED");
-    if (h.daemonVersion !== "2.0.2" || h.extensionVersion !== "1.0.26") throw new BridgeError("BACKEND_VERSION_UNSUPPORTED");
+    if (h.daemonVersion !== "2.0.2" || h.extensionVersion !== "1.0.26")
+      throw new BridgeError("BACKEND_VERSION_UNSUPPORTED");
     const contexts = (h.profiles || []).filter((p) => p.extensionConnected);
     const chosen = profile || h.contextId || (contexts.length === 1 ? contexts[0].contextId : void 0);
-    if (!chosen || !contexts.some((p) => p.contextId === chosen)) throw new BridgeError("ACCOUNT_UNVERIFIED");
+    if (!chosen || !contexts.some((p) => p.contextId === chosen))
+      throw new BridgeError("ACCOUNT_UNVERIFIED");
     const ps = await run("/bin/ps", ["-p", String(h.pid), "-o", "lstart="]);
     return { h, profile: chosen, connection: `${h.pid}:${ps.stdout.trim()}` };
   }
@@ -568,23 +880,52 @@ var BrowserAdapter = class {
     const api = await this.upstream();
     let r;
     try {
-      const response = await api.requestDaemon("/command", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: id("cmd"), action, surface: "browser", timeout: 12, deadlineAt: Date.now() + 12e3, ...params }), timeout: 14e3 });
+      const response = await api.requestDaemon("/command", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: id("cmd"),
+          action,
+          surface: "browser",
+          timeout: 12,
+          deadlineAt: Date.now() + 12e3,
+          ...params
+        }),
+        timeout: 14e3
+      });
       r = await response.json();
     } catch {
       throw new BridgeError("BRIDGE_DISCONNECTED");
     }
     if (!r.ok) {
       const code = String(r.errorCode ?? "");
-      throw new BridgeError(/tab_gone|target_closed|bound_tab_closed/.test(code) ? "TARGET_CLOSED" : /profile|extension|command_lost|command_result_unknown/.test(code) ? "BRIDGE_DISCONNECTED" : "UI_CHANGED");
+      throw new BridgeError(
+        /tab_gone|target_closed|bound_tab_closed/.test(code) ? "TARGET_CLOSED" : /profile|extension|command_lost|command_result_unknown/.test(code) ? "BRIDGE_DISCONNECTED" : "UI_CHANGED"
+      );
     }
     return r;
   }
   async doctor() {
     try {
       const h = await this.health();
-      return { channel: "xiaohongshu_web", status: "connected", backend: "OpenCLI", version: "2.0.2", extension: "1.0.26", profiles: h.h.profiles?.map((p) => ({ profile: p.contextId, connected: p.extensionConnected })) };
+      return {
+        channel: "xiaohongshu_web",
+        status: "connected",
+        backend: "OpenCLI",
+        version: "2.0.2",
+        extension: "1.0.26",
+        profiles: h.h.profiles?.map((p) => ({
+          profile: p.contextId,
+          connected: p.extensionConnected
+        }))
+      };
     } catch (e) {
-      return { channel: "xiaohongshu_web", status: "unavailable", error: e instanceof BridgeError ? e.code : "BACKEND_NOT_INSTALLED", required: "\u672C\u5730 Chrome\u3001OpenCLI 2.0.2\u3001Browser Bridge 1.0.26" };
+      return {
+        channel: "xiaohongshu_web",
+        status: "unavailable",
+        error: e instanceof BridgeError ? e.code : "BACKEND_NOT_INSTALLED",
+        required: "\u672C\u5730 Chrome\u3001OpenCLI 2.0.2\u3001Browser Bridge 1.0.26"
+      };
     }
   }
   async bind(a) {
@@ -592,18 +933,39 @@ var BrowserAdapter = class {
     const session = id("csb");
     const r = await this.command("bind", { session, contextId: h.profile });
     const target = r.page || r.data?.targetId || r.data?.page;
-    if (!target) throw new BridgeError("BACKEND_CONTRACT_UNSUPPORTED", "\u7ED1\u5B9A\u672A\u8FD4\u56DE\u53EF\u9760\u7684 page \u6807\u8BC6");
-    const b = { channel: "xiaohongshu_web", backend: "OpenCLI", backend_version: "2.0.2", profile: h.profile, connection: h.connection, target, session };
+    if (!target)
+      throw new BridgeError("BACKEND_CONTRACT_UNSUPPORTED", "\u7ED1\u5B9A\u672A\u8FD4\u56DE\u53EF\u9760\u7684 page \u6807\u8BC6");
+    const b = {
+      channel: "xiaohongshu_web",
+      backend: "OpenCLI",
+      backend_version: "2.0.2",
+      profile: h.profile,
+      connection: h.connection,
+      target,
+      session
+    };
     const o = await this.inspect(b);
     if (o.blocker) throw new BridgeError(o.blocker);
-    if (a.expected_account && o.account !== hash(a.expected_account)) throw new BridgeError("ACCOUNT_MISMATCH");
-    if (!o.account && !a.user_bound) throw new BridgeError("ACCOUNT_UNVERIFIED", "\u65E0\u6CD5\u8BC6\u522B\u8D26\u53F7\uFF0C\u9700\u8981\u7528\u6237\u660E\u786E\u9009\u62E9\u5F53\u524D\u8D26\u53F7");
-    return { ...b, account: o.account, assurance: o.account ? "verified" : "user_bound", document: o.document };
+    if (a.expected_account && o.account !== hash(a.expected_account))
+      throw new BridgeError("ACCOUNT_MISMATCH");
+    if (!o.account && !a.user_bound)
+      throw new BridgeError("ACCOUNT_UNVERIFIED", "\u65E0\u6CD5\u8BC6\u522B\u8D26\u53F7\uFF0C\u9700\u8981\u7528\u6237\u660E\u786E\u9009\u62E9\u5F53\u524D\u8D26\u53F7");
+    return {
+      ...b,
+      account: o.account,
+      assurance: o.account ? "verified" : "user_bound",
+      document: o.document
+    };
   }
   async inspect(b) {
     const h = await this.health(b.profile);
     if (h.connection !== b.connection) throw new BridgeError("TARGET_CHANGED");
-    const r = await this.command("exec", { session: b.session, contextId: b.profile, page: b.target, code: `(${browserProgram.toString()})(${JSON.stringify({ action: "inspect" })})` });
+    const r = await this.command("exec", {
+      session: b.session,
+      contextId: b.profile,
+      page: b.target,
+      code: `(${browserProgram.toString()})(${JSON.stringify({ action: "inspect" })})`
+    });
     const d = r.data;
     if (!d || !d.document || !r.page) throw new BridgeError("BACKEND_CONTRACT_UNSUPPORTED");
     return { ...d, account: d.account, target: r.page, connection: h.connection };
@@ -612,7 +974,12 @@ var BrowserAdapter = class {
     const o = await this.inspect(b);
     assertObservation(b, o);
     const guard = { document: o.document, origin: o.origin, account: b.account };
-    const r = await this.command("exec", { session: b.session, contextId: b.profile, page: b.target, code: `(${browserProgram.toString()})(${JSON.stringify({ ...p, guard, deadline: Date.now() + 1e4 })})` });
+    const r = await this.command("exec", {
+      session: b.session,
+      contextId: b.profile,
+      page: b.target,
+      code: `(${browserProgram.toString()})(${JSON.stringify({ ...p, guard, deadline: Date.now() + 1e4 })})`
+    });
     if (r.page !== b.target) throw new BridgeError("TARGET_CHANGED");
     if (r.data?.bridge_error) throw new BridgeError(r.data.bridge_error);
     return r.data;
@@ -636,7 +1003,11 @@ var BrowserAdapter = class {
     if (tool === "xhs_read_note") {
       await this.program(b, { action: "note_open", note_id: a.note_id });
       checkpoint("note_opened");
-      return this.poll(b, { action: "note_read", note_id: a.note_id, comment_limit: a.comment_limit }, check);
+      return this.poll(
+        b,
+        { action: "note_read", note_id: a.note_id, comment_limit: a.comment_limit },
+        check
+      );
     }
     throw new BridgeError("UNSUPPORTED_TOOL");
   }
@@ -645,33 +1016,72 @@ var BrowserAdapter = class {
     check();
     if (kind === "comment") return this.program(b, { action: "prepare_comment", ...payload });
     if (kind !== "post") throw new BridgeError("UNSUPPORTED_TOOL");
+    const fileDigests = [];
     for (const file of payload.images) {
       if (!file.startsWith("/")) throw new BridgeError("INVALID_FILE");
       const s = await stat(file);
       if (!s.isFile() || s.size > 20 * 1024 * 1024) throw new BridgeError("INVALID_FILE");
       const bytes = await readFile(file);
-      if (!(bytes[0] === 255 && bytes[1] === 216 || bytes[0] === 137 && bytes.subarray(1, 4).toString() === "PNG")) throw new BridgeError("INVALID_FILE");
+      fileDigests.push(hash(bytes.toString("base64")));
+      if (!(bytes[0] === 255 && bytes[1] === 216 || bytes[0] === 137 && bytes.subarray(1, 4).toString() === "PNG"))
+        throw new BridgeError("INVALID_FILE");
     }
     const o = await this.inspect(b);
     assertObservation(b, o);
-    if (o.origin !== "https://creator.xiaohongshu.com") throw new BridgeError("TARGET_CHANGED", "\u8BF7\u7528\u6237\u5728\u7ED1\u5B9A\u6807\u7B7E\u9875\u6253\u5F00\u521B\u4F5C\u4E2D\u5FC3\uFF0C\u518D\u91CD\u65B0\u6838\u9A8C\u8D26\u53F7");
+    if (o.origin !== "https://creator.xiaohongshu.com")
+      throw new BridgeError("TARGET_CHANGED", "\u8BF7\u7528\u6237\u5728\u7ED1\u5B9A\u6807\u7B7E\u9875\u6253\u5F00\u521B\u4F5C\u4E2D\u5FC3\uFF0C\u518D\u91CD\u65B0\u6838\u9A8C\u8D26\u53F7");
     check();
-    await this.command("set-file-input", { session: b.session, contextId: b.profile, page: b.target, selector: "input[type=file]", files: payload.images });
-    const result = await this.program(b, { action: "prepare_post", ...payload, image_count: payload.images.length });
-    result.checkpoint.files = await Promise.all(payload.images.map(async (file) => hash((await readFile(file)).toString("base64"))));
+    await this.command("set-file-input", {
+      session: b.session,
+      contextId: b.profile,
+      page: b.target,
+      selector: "input[type=file]",
+      files: payload.images
+    });
+    const result = await this.program(b, {
+      action: "prepare_post",
+      ...payload,
+      image_count: payload.images.length
+    });
+    const after = await Promise.all(
+      payload.images.map(async (file) => hash((await readFile(file)).toString("base64")))
+    );
+    if (JSON.stringify(after) !== JSON.stringify(fileDigests))
+      throw new BridgeError("PAYLOAD_CHANGED");
+    result.checkpoint.files = fileDigests;
     return result;
   }
   async dispatch(op, b, check) {
     check();
     if (op.kind === "post") {
-      const files = await Promise.all(op.payload.images.map(async (file) => hash((await readFile(file)).toString("base64"))));
-      if (JSON.stringify(files) !== JSON.stringify(op.prepared?.files)) throw new BridgeError("PAYLOAD_CHANGED");
+      const files = await Promise.all(
+        op.payload.images.map(
+          async (file) => hash((await readFile(file)).toString("base64"))
+        )
+      );
+      if (JSON.stringify(files) !== JSON.stringify(op.prepared?.files))
+        throw new BridgeError("PAYLOAD_CHANGED");
     }
-    await this.program(b, { action: "dispatch", kind: op.kind, ...op.payload, prepared: op.prepared, image_count: op.payload.images?.length });
+    await this.program(b, {
+      action: "dispatch",
+      kind: op.kind,
+      ...op.payload,
+      prepared: op.prepared,
+      operation_id: op.operation_id,
+      payload_digest: op.digest,
+      image_count: op.payload.images?.length
+    });
     return this.reconcile(op, b);
   }
   async reconcile(op, b) {
-    return this.program(b, { action: "reconcile", kind: op.kind, ...op.payload, prepared: op.prepared });
+    return this.program(b, {
+      action: "reconcile",
+      kind: op.kind,
+      ...op.payload,
+      prepared: op.prepared,
+      operation_id: op.operation_id,
+      payload_digest: op.digest
+    });
   }
   async unbind(b) {
     await this.command("close-window", { session: b.session, contextId: b.profile });
@@ -690,7 +1100,15 @@ var WechatAdapter = class {
     return new Promise((resolve, reject) => {
       const fd2 = Number(process.env.SESSION_BRIDGE_LOCK_FD);
       const inherited = Number.isInteger(fd2) && fd2 >= 3;
-      const child = spawn(join3(this.root, "wechat-worker/.venv/bin/python"), [join3(this.root, "wechat-worker/worker.py")], { stdio: inherited ? ["pipe", "pipe", "pipe", fd2] : ["pipe", "pipe", "pipe"], env: { ...process.env, SESSION_BRIDGE_LOCK_FD: inherited ? "3" : "" }, shell: false });
+      const child = spawn(
+        join3(this.root, "wechat-worker/.venv/bin/python"),
+        [join3(this.root, "wechat-worker/worker.py")],
+        {
+          stdio: inherited ? ["pipe", "pipe", "pipe", fd2] : ["pipe", "pipe", "pipe"],
+          env: { ...process.env, SESSION_BRIDGE_LOCK_FD: inherited ? "3" : "" },
+          shell: false
+        }
+      );
       let output = "";
       let timedOut = false;
       const timer = setTimeout(() => {
@@ -722,29 +1140,45 @@ var WechatAdapter = class {
           reject(new BridgeError("WECHAT_AX_UNAVAILABLE"));
         }
       });
-      child.stdin.end(JSON.stringify(input2));
+      child.stdin.end(JSON.stringify({ ...input2, deadline: Date.now() + 1e4 }));
     });
   }
   async doctor() {
+    if (process.platform !== "darwin")
+      return { channel: "wechat_macos", status: "unsupported", error: "UNSUPPORTED_PLATFORM" };
     try {
       return await this.worker({ action: "doctor" });
     } catch (e) {
-      return { channel: "wechat_macos", status: "unavailable", error: e instanceof BridgeError ? e.code : "WECHAT_AX_UNAVAILABLE" };
+      return {
+        channel: "wechat_macos",
+        status: "unavailable",
+        error: e instanceof BridgeError ? e.code : "WECHAT_AX_UNAVAILABLE"
+      };
     }
   }
   async bind(a) {
     const o = await this.worker({ action: "bind" });
     if (o.blocker) throw new BridgeError(o.blocker);
     if (!o.account && !a.user_bound) throw new BridgeError("ACCOUNT_UNVERIFIED");
-    return { channel: "wechat_macos", backend: "native-ax", backend_version: "0.1.0", connection: o.connection, target: o.target, account: o.account, assurance: o.account ? "verified" : "user_bound" };
+    return {
+      channel: "wechat_macos",
+      backend: "native-ax",
+      backend_version: "0.1.0",
+      connection: o.connection,
+      target: o.target,
+      account: o.account,
+      assurance: o.account ? "verified" : "user_bound"
+    };
   }
   async inspect(b) {
     return this.worker({ action: "inspect", binding: b });
   }
   async execute(tool, a, b, _checkpoint, check) {
     check();
-    if (tool === "wechat_find_chat") return this.worker({ action: "find_chat", name: a.name, binding: b });
-    if (tool === "wechat_read_messages") return this.worker({ action: "read", chat_ref: a.chat_ref, limit: a.limit, binding: b });
+    if (tool === "wechat_find_chat")
+      return this.worker({ action: "find_chat", name: a.name, binding: b });
+    if (tool === "wechat_read_messages")
+      return this.worker({ action: "read", chat_ref: a.chat_ref, limit: a.limit, binding: b });
     throw new BridgeError("UNSUPPORTED_TOOL");
   }
   async prepare(kind, payload, b, check) {
@@ -752,12 +1186,33 @@ var WechatAdapter = class {
     check();
     return this.worker({ action: "prepare", ...payload, binding: b });
   }
+  receipt(op) {
+    const dir = join3(statePath(), "receipts");
+    secureDir(dir);
+    return {
+      operation_id: op.operation_id,
+      payload_digest: op.digest,
+      receipt_path: join3(dir, op.operation_id + ".json")
+    };
+  }
   async dispatch(op, b, check) {
     check();
-    return this.worker({ action: "dispatch", ...op.payload, prepared: op.prepared, binding: b });
+    return this.worker({
+      action: "dispatch",
+      ...op.payload,
+      prepared: op.prepared,
+      ...this.receipt(op),
+      binding: b
+    });
   }
   async reconcile(op, b) {
-    return this.worker({ action: "reconcile", ...op.payload, prepared: op.prepared, binding: b });
+    return this.worker({
+      action: "reconcile",
+      ...op.payload,
+      prepared: op.prepared,
+      ...this.receipt(op),
+      binding: b
+    });
   }
 };
 
@@ -767,23 +1222,54 @@ var ref = z.string().min(1).max(256);
 var text = z.string().min(1).max(1e4);
 var binding = { binding_id: ref };
 var task = { ...binding, client_request_id: ref };
-var scope = z.object({ scope_ref: ref, action: ref, target_ref: ref, payload_digest: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
+var scope = z.object({
+  scope_ref: ref,
+  action: ref,
+  target_ref: ref,
+  payload_digest: z.string().regex(/^[a-f0-9]{64}$/)
+}).strict();
 var commit = z.object({ ...task, operation_id: ref, payload_version: z.number().int().positive(), scope }).strict();
 var chat = ref;
 var note = z.string().regex(/^[a-f0-9]{24}$/);
 var schemas = {
   bridge_doctor: z.object({}).strict(),
-  bridge_bind: z.object({ channel: z.enum(["xiaohongshu_web", "wechat_macos"]), profile: ref.optional(), expected_account: ref.optional(), user_bound: z.boolean().default(false) }).strict(),
+  bridge_bind: z.object({
+    channel: z.enum(["xiaohongshu_web", "wechat_macos"]),
+    profile: ref.optional(),
+    expected_account: ref.optional(),
+    user_bound: z.boolean().default(false)
+  }).strict(),
   bridge_inspect_session: z.object(binding).strict(),
   bridge_unbind: z.object(binding).strict(),
-  bridge_get_task: z.object({ task_id: ref.optional(), binding_id: ref.optional(), client_request_id: ref.optional() }).strict().refine((a) => !!a.task_id || !!(a.binding_id && a.client_request_id), "\u9700\u8981 task_id \u6216\u7ED1\u5B9A\u4E0E\u8BF7\u6C42 ID"),
+  bridge_get_task: z.object({
+    task_id: ref.optional(),
+    binding_id: ref.optional(),
+    client_request_id: ref.optional()
+  }).strict().refine(
+    (a) => !!a.task_id || !!(a.binding_id && a.client_request_id),
+    "\u9700\u8981 task_id \u6216\u7ED1\u5B9A\u4E0E\u8BF7\u6C42 ID"
+  ),
   bridge_cancel_task: z.object({ task_id: ref }).strict(),
   bridge_resume_task: z.object({ task_id: ref }).strict(),
   bridge_reconcile_operation: z.object({ operation_id: ref }).strict(),
-  xhs_search: z.object({ ...task, query: z.string().min(1).max(100), limit: z.number().int().min(1).max(20).default(5) }).strict(),
+  xhs_search: z.object({
+    ...task,
+    query: z.string().min(1).max(100),
+    limit: z.number().int().min(1).max(20).default(5)
+  }).strict(),
   xhs_read_note: z.object({ ...task, note_id: note, comment_limit: z.number().int().min(0).max(20).default(0) }).strict(),
-  xhs_prepare_post: z.object({ ...task, payload: z.object({ title: z.string().min(1).max(20), body: text, images: z.array(z.string().min(1).max(4096)).min(1).max(9) }).strict() }).strict(),
-  xhs_prepare_comment: z.object({ ...task, payload: z.object({ note_id: note, body: z.string().min(1).max(500) }).strict() }).strict(),
+  xhs_prepare_post: z.object({
+    ...task,
+    payload: z.object({
+      title: z.string().min(1).max(20),
+      body: text,
+      images: z.array(z.string().min(1).max(4096)).min(1).max(9)
+    }).strict()
+  }).strict(),
+  xhs_prepare_comment: z.object({
+    ...task,
+    payload: z.object({ note_id: note, body: z.string().min(1).max(500) }).strict()
+  }).strict(),
   wechat_find_chat: z.object({ ...task, name: z.string().min(1).max(100) }).strict(),
   wechat_read_messages: z.object({ ...task, chat_ref: chat, limit: z.number().int().min(1).max(50).default(10) }).strict(),
   wechat_prepare_message: z.object({ ...task, payload: z.object({ chat_ref: chat, body: text }).strict() }).strict(),
@@ -807,10 +1293,14 @@ var path = statePath();
 var store = new Store(path);
 store.recover();
 store.purge();
-var coordinator = new Coordinator(store, { xiaohongshu_web: new BrowserAdapter(root), wechat_macos: new WechatAdapter(root) });
+var coordinator = new Coordinator(store, {
+  xiaohongshu_web: new BrowserAdapter(root),
+  wechat_macos: new WechatAdapter(root)
+});
 var socket = join4(path, "bridge.sock");
 if (existsSync2(socket)) {
-  if (lstatSync2(socket).isSymbolicLink() || !lstatSync2(socket).isSocket()) throw new Error("\u4E0D\u5B89\u5168\u7684 IPC \u8DEF\u5F84");
+  if (lstatSync2(socket).isSymbolicLink() || !lstatSync2(socket).isSocket())
+    throw new Error("\u4E0D\u5B89\u5168\u7684 IPC \u8DEF\u5F84");
   unlinkSync(socket);
 }
 var server = createServer((client) => {
@@ -832,22 +1322,30 @@ var server = createServer((client) => {
     try {
       const r = JSON.parse(body.slice(0, nl));
       const args = input(r.tool, r.args);
+      if (process.env.SESSION_BRIDGE_ISOLATED_TEST === "1" && !["bridge_doctor", "bridge_get_task"].includes(r.tool))
+        throw new BridgeError("TEST_MODE_READ_ONLY");
       const data = await coordinator.call(r.tool, args);
       client.end(JSON.stringify({ ok: true, data }) + "\n");
     } catch (e) {
-      client.end(JSON.stringify({ ok: false, error: e instanceof BridgeError ? e.code : e?.name === "ZodError" ? "INVALID_INPUT" : "INTERNAL_ERROR" }) + "\n");
+      client.end(
+        JSON.stringify({
+          ok: false,
+          error: e instanceof BridgeError ? e.code : e?.name === "ZodError" ? "INVALID_INPUT" : "INTERNAL_ERROR"
+        }) + "\n"
+      );
     }
   });
 });
 server.listen(socket, () => chmodSync2(socket, 384));
-for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => {
-  server.close();
-  void coordinator.queue.run(async () => {
-    store.close();
-    try {
-      unlinkSync(socket);
-    } catch {
-    }
-    process.exit(0);
+for (const signal of ["SIGINT", "SIGTERM"])
+  process.on(signal, () => {
+    server.close();
+    void coordinator.queue.run(async () => {
+      store.close();
+      try {
+        unlinkSync(socket);
+      } catch {
+      }
+      process.exit(0);
+    });
   });
-});

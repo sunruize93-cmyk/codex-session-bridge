@@ -1,0 +1,22 @@
+name: 本地可靠性验证
+on: [push, pull_request]
+jobs:
+  test:
+    strategy:
+      matrix:
+        node: [22, 24]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - run: npm run build
+      - run: npm test
+      - run: npm run format:check
+      - run: python3 -m unittest discover -s wechat-worker -p 'test_*.py'
+      - run: npm audit --omit=dev
+      - run: python3 -m py_compile scripts/lock-daemon.py wechat-worker/worker.py
