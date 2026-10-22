@@ -16,7 +16,11 @@ import {
 import { browserProgram } from './browser-program.js';
 const run = promisify(execFile);
 export class BrowserAdapter implements Adapter {
-  constructor(public root: string) {}
+  constructor(
+    public root: string,
+    public channel: 'xiaohongshu_web' | 'instagram_web' = 'xiaohongshu_web',
+    public pageProgram = browserProgram,
+  ) {}
   async upstream() {
     return import(
       pathToFileURL(
@@ -76,7 +80,7 @@ export class BrowserAdapter implements Adapter {
     try {
       const h = await this.health();
       return {
-        channel: 'xiaohongshu_web',
+        channel: this.channel,
         status: 'connected',
         backend: 'OpenCLI',
         version: '2.0.2',
@@ -98,7 +102,7 @@ export class BrowserAdapter implements Adapter {
       } catch {}
       return {
         profiles,
-        channel: 'xiaohongshu_web',
+        channel: this.channel,
         status: 'unavailable',
         error: e instanceof BridgeError ? e.code : 'BACKEND_NOT_INSTALLED',
         required: '本地 Chrome、OpenCLI 2.0.2、Browser Bridge 1.0.26',
@@ -113,7 +117,7 @@ export class BrowserAdapter implements Adapter {
     if (!target)
       throw new BridgeError('BACKEND_CONTRACT_UNSUPPORTED', '绑定未返回可靠的 page 标识');
     const b: any = {
-      channel: 'xiaohongshu_web',
+      channel: this.channel,
       backend: 'OpenCLI',
       backend_version: '2.0.2',
       profile: h.profile,
@@ -121,12 +125,20 @@ export class BrowserAdapter implements Adapter {
       target,
       session,
     };
-    const o = await this.inspect(b);
-    if (o.blocker) throw new BridgeError(o.blocker);
-    if (a.expected_account && o.account !== hash(a.expected_account))
-      throw new BridgeError('ACCOUNT_MISMATCH');
-    if (!o.account && !a.user_bound)
-      throw new BridgeError('ACCOUNT_UNVERIFIED', '无法识别账号，需要用户明确选择当前账号');
+    let o: Observation;
+    try {
+      o = await this.inspect(b);
+      assertObservation(b, o);
+      if (a.expected_account && o.account !== hash(a.expected_account))
+        throw new BridgeError('ACCOUNT_MISMATCH');
+      if (!o.account && !a.user_bound)
+        throw new BridgeError('ACCOUNT_UNVERIFIED', '无法识别账号，需要用户明确选择当前账号');
+    } catch (e) {
+      try {
+        await this.unbind(b);
+      } catch {}
+      throw e;
+    }
     return {
       ...b,
       account: o.account,
@@ -141,9 +153,10 @@ export class BrowserAdapter implements Adapter {
       session: b.session,
       contextId: b.profile,
       page: b.target,
-      code: `(${browserProgram.toString()})(${JSON.stringify({ action: 'inspect' })})`,
+      code: `(${this.pageProgram.toString()})(${JSON.stringify({ action: 'inspect' })})`,
     });
     const d = r.data;
+    if (d?.bridge_error) throw new BridgeError(d.bridge_error);
     if (!d || !d.document || !r.page) throw new BridgeError('BACKEND_CONTRACT_UNSUPPORTED');
     return { ...d, account: d.account, target: r.page, connection: h.connection };
   }
@@ -155,7 +168,7 @@ export class BrowserAdapter implements Adapter {
       session: b.session,
       contextId: b.profile,
       page: b.target,
-      code: `(${browserProgram.toString()})(${JSON.stringify({ ...p, guard, deadline: Date.now() + 10000 })})`,
+      code: `(${this.pageProgram.toString()})(${JSON.stringify({ ...p, guard, deadline: Date.now() + 10000 })})`,
     });
     if (r.page !== b.target) throw new BridgeError('TARGET_CHANGED');
     if (r.data?.bridge_error) throw new BridgeError(r.data.bridge_error);

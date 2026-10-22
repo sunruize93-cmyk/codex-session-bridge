@@ -91,6 +91,7 @@ export class Coordinator {
           .find((b) => b.channel === a.channel && b.state !== 'CLOSED');
         if (existing) throw new BridgeError('RESOURCE_BUSY', '同渠道已有绑定，请先核对或解除');
         const data = await adapter.bind(a);
+        if (data.channel !== a.channel) throw new BridgeError('CHANNEL_MISMATCH');
         const b: Binding = {
           ...data,
           binding_id: id('binding'),
@@ -217,6 +218,7 @@ export class Coordinator {
     const b = this.binding(a.binding_id);
     if (
       (tool.startsWith('xhs_') && b.channel !== 'xiaohongshu_web') ||
+      (tool.startsWith('ig_') && b.channel !== 'instagram_web') ||
       (tool.startsWith('wechat_') && b.channel !== 'wechat_macos')
     )
       throw new BridgeError('CHANNEL_MISMATCH');

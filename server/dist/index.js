@@ -20,9 +20,9 @@ var commit = z.object({ ...task, operation_id: ref, payload_version: z.number().
 var chat = ref;
 var note = z.string().regex(/^[a-f0-9]{24}$/);
 var schemas = {
-  bridge_doctor: z.object({ channel: z.enum(["xiaohongshu_web", "wechat_macos"]).optional() }).strict(),
+  bridge_doctor: z.object({ channel: z.enum(["xiaohongshu_web", "instagram_web", "wechat_macos"]).optional() }).strict(),
   bridge_bind: z.object({
-    channel: z.enum(["xiaohongshu_web", "wechat_macos"]),
+    channel: z.enum(["xiaohongshu_web", "instagram_web", "wechat_macos"]),
     profile: ref.optional(),
     expected_account: ref.optional(),
     user_bound: z.boolean().default(false),
@@ -51,6 +51,15 @@ var schemas = {
     limit: z.number().int().min(1).max(20).default(5)
   }).strict(),
   xhs_read_note: z.object({ ...task, note_id: note, comment_limit: z.number().int().min(0).max(20).default(0) }).strict(),
+  ig_search: z.object({
+    ...task,
+    query: z.string().trim().min(1).max(100),
+    limit: z.number().int().min(1).max(10).default(3)
+  }).strict(),
+  ig_read_post: z.object({
+    ...task,
+    post_url: z.string().max(256).regex(/^https:\/\/(?:www\.)?instagram\.com\/(?:p|reel)\/[A-Za-z0-9_-]{1,64}\/$/)
+  }).strict(),
   xhs_prepare_post: z.object({
     ...task,
     payload: z.object({
@@ -81,6 +90,8 @@ var descriptions = {
   bridge_reconcile_operation: "\u4EC5\u89C2\u5BDF\u672A\u77E5\u63D0\u4EA4\u7ED3\u679C\uFF0C\u4E0D\u91CD\u65B0\u63D0\u4EA4\u3002",
   xhs_search: "\u5728\u7ED1\u5B9A\u9875\u8FDB\u884C\u7AD9\u5185\u641C\u7D22\uFF0C\u6709\u9650\u8BFB\u53D6\u65B0\u7ED3\u679C\u3002",
   xhs_read_note: "\u8BFB\u53D6\u5F53\u524D\u9875\u6216\u5F53\u524D\u7ED3\u679C\u4E2D\u660E\u786E\u7B14\u8BB0\u7684\u53EF\u89C1\u6B63\u6587\u3002",
+  ig_search: "\u5728\u5DF2\u7ED1\u5B9A Instagram \u7F51\u9875\u641C\u7D22\u5173\u952E\u8BCD\uFF0C\u53EA\u8BFB\u53D6\u6709\u9650\u53EF\u89C1\u5E16\u5B50\u7ED3\u679C\uFF1B\u4E0D\u70B9\u8D5E\u6216\u5173\u6CE8\u3002",
+  ig_read_post: "\u8BFB\u53D6\u5F53\u524D\u9875\u6216\u53EF\u89C1\u641C\u7D22\u7ED3\u679C\u4E2D\u660E\u786E Instagram \u5E16\u5B50\u7684\u53EF\u89C1\u8BF4\u660E\u6587\u5B57\uFF1B\u4E0D\u8BFB\u8BC4\u8BBA\u3002",
   xhs_prepare_post: "\u5728\u7528\u6237\u5DF2\u6253\u5F00\u7684\u521B\u4F5C\u4E2D\u5FC3\u51C6\u5907\u56FE\u6587\u8349\u7A3F\uFF1B\u4E0D\u53D1\u5E03\u3002",
   xhs_prepare_comment: "\u51C6\u5907\u660E\u786E\u7B14\u8BB0\u7684\u8BC4\u8BBA\u8349\u7A3F\uFF1B\u4E0D\u63D0\u4EA4\u3002",
   wechat_find_chat: "\u5B9A\u4F4D\u552F\u4E00\u53EF\u89C1\u804A\u5929\uFF1B\u540C\u540D\u5019\u9009\u62D2\u7EDD\u9009\u62E9\u3002",
@@ -219,6 +230,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         "bridge_get_task",
         "bridge_inspect_session",
         "wechat_read_messages",
+        "ig_search",
+        "ig_read_post",
         "bridge_reconcile_operation"
       ].includes(name),
       destructiveHint: ["xhs_publish_post", "xhs_submit_comment", "wechat_send_message"].includes(

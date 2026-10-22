@@ -32,7 +32,7 @@ test('实际 stdio MCP：两客户端共用协调进程、严格 schema、脱敏
       clients.push(client);
     }
     const tools = await clients[0].listTools();
-    assert.equal(tools.tools.length, 18);
+    assert.equal(tools.tools.length, 20);
     assert.equal(
       tools.tools.find((t) => t.name === 'wechat_send_message')?.annotations?.destructiveHint,
       true,

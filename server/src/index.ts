@@ -24,6 +24,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         'bridge_get_task',
         'bridge_inspect_session',
         'wechat_read_messages',
+        'ig_search',
+        'ig_read_post',
         'bridge_reconcile_operation',
       ].includes(name),
       destructiveHint: ['xhs_publish_post', 'xhs_submit_comment', 'wechat_send_message'].includes(

@@ -6,6 +6,7 @@ import { Coordinator } from './coordinator.js';
 import { Store, statePath } from './store.js';
 import { BrowserAdapter } from './adapters/browser.js';
 import { WechatAdapter } from './adapters/wechat.js';
+import { InstagramAdapter } from './adapters/instagram.js';
 import { input } from './schemas.js';
 import { BridgeError } from './model.js';
 process.umask(0o077);
@@ -19,6 +20,7 @@ store.recover();
 store.purge();
 const coordinator = new Coordinator(store, {
   xiaohongshu_web: new BrowserAdapter(root),
+  instagram_web: new InstagramAdapter(root),
   wechat_macos: new WechatAdapter(root),
 });
 const socket = join(path, 'bridge.sock');

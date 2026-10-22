@@ -18,11 +18,11 @@ const chat = ref;
 const note = z.string().regex(/^[a-f0-9]{24}$/);
 export const schemas: Record<string, z.ZodTypeAny> = {
   bridge_doctor: z
-    .object({ channel: z.enum(['xiaohongshu_web', 'wechat_macos']).optional() })
+    .object({ channel: z.enum(['xiaohongshu_web', 'instagram_web', 'wechat_macos']).optional() })
     .strict(),
   bridge_bind: z
     .object({
-      channel: z.enum(['xiaohongshu_web', 'wechat_macos']),
+      channel: z.enum(['xiaohongshu_web', 'instagram_web', 'wechat_macos']),
       profile: ref.optional(),
       expected_account: ref.optional(),
       user_bound: z.boolean().default(false),
@@ -62,6 +62,22 @@ export const schemas: Record<string, z.ZodTypeAny> = {
     .strict(),
   xhs_read_note: z
     .object({ ...task, note_id: note, comment_limit: z.number().int().min(0).max(20).default(0) })
+    .strict(),
+  ig_search: z
+    .object({
+      ...task,
+      query: z.string().trim().min(1).max(100),
+      limit: z.number().int().min(1).max(10).default(3),
+    })
+    .strict(),
+  ig_read_post: z
+    .object({
+      ...task,
+      post_url: z
+        .string()
+        .max(256)
+        .regex(/^https:\/\/(?:www\.)?instagram\.com\/(?:p|reel)\/[A-Za-z0-9_-]{1,64}\/$/),
+    })
     .strict(),
   xhs_prepare_post: z
     .object({
@@ -103,6 +119,8 @@ export const descriptions: Record<string, string> = {
   bridge_reconcile_operation: '仅观察未知提交结果，不重新提交。',
   xhs_search: '在绑定页进行站内搜索，有限读取新结果。',
   xhs_read_note: '读取当前页或当前结果中明确笔记的可见正文。',
+  ig_search: '在已绑定 Instagram 网页搜索关键词，只读取有限可见帖子结果；不点赞或关注。',
+  ig_read_post: '读取当前页或可见搜索结果中明确 Instagram 帖子的可见说明文字；不读评论。',
   xhs_prepare_post: '在用户已打开的创作中心准备图文草稿；不发布。',
   xhs_prepare_comment: '准备明确笔记的评论草稿；不提交。',
   wechat_find_chat: '定位唯一可见聊天；同名候选拒绝选择。',

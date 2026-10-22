@@ -26,6 +26,10 @@ var BridgeError = class extends Error {
   code;
   detail;
 };
+var browserOrigins = {
+  xiaohongshu_web: ["https://www.xiaohongshu.com", "https://creator.xiaohongshu.com"],
+  instagram_web: ["https://www.instagram.com", "https://instagram.com"]
+};
 function assertObservation(b, o) {
   if (o.connection !== b.connection)
     throw new BridgeError("TARGET_CHANGED", "\u63A7\u5236\u8FDE\u63A5\u5DF2\u66F4\u6362\uFF0C\u8BF7\u91CD\u65B0\u7ED1\u5B9A");
@@ -33,7 +37,7 @@ function assertObservation(b, o) {
   if (o.blocker) throw new BridgeError(o.blocker);
   if (b.account && o.account !== b.account)
     throw new BridgeError("ACCOUNT_MISMATCH", "\u8D26\u53F7\u8BC1\u636E\u6539\u53D8\u6216\u6D88\u5931");
-  if (b.channel === "xiaohongshu_web" && !["https://www.xiaohongshu.com", "https://creator.xiaohongshu.com"].includes(o.origin ?? ""))
+  if (browserOrigins[b.channel] && !browserOrigins[b.channel].includes(o.origin ?? ""))
     throw new BridgeError("TARGET_CHANGED", "\u9875\u9762\u79BB\u5F00\u5141\u8BB8\u7684\u6765\u6E90");
 }
 
@@ -129,6 +133,7 @@ var Coordinator = class {
         const existing = this.store.all("binding").find((b3) => b3.channel === a.channel && b3.state !== "CLOSED");
         if (existing) throw new BridgeError("RESOURCE_BUSY", "\u540C\u6E20\u9053\u5DF2\u6709\u7ED1\u5B9A\uFF0C\u8BF7\u5148\u6838\u5BF9\u6216\u89E3\u9664");
         const data = await adapter.bind(a);
+        if (data.channel !== a.channel) throw new BridgeError("CHANNEL_MISMATCH");
         const b2 = {
           ...data,
           binding_id: id("binding"),
@@ -233,7 +238,7 @@ var Coordinator = class {
         return { schema_version: "1", operation: this.publicOp(op) };
       });
     const b = this.binding(a.binding_id);
-    if (tool.startsWith("xhs_") && b.channel !== "xiaohongshu_web" || tool.startsWith("wechat_") && b.channel !== "wechat_macos")
+    if (tool.startsWith("xhs_") && b.channel !== "xiaohongshu_web" || tool.startsWith("ig_") && b.channel !== "instagram_web" || tool.startsWith("wechat_") && b.channel !== "wechat_macos")
       throw new BridgeError("CHANNEL_MISMATCH");
     const fp = hash({ tool, args: a });
     const prior = this.store.all("task").find((t2) => t2.binding_id === b.binding_id && t2.client_request_id === a.client_request_id);
@@ -892,10 +897,14 @@ async function browserProgram(p) {
 // server/src/adapters/browser.ts
 var run = promisify(execFile);
 var BrowserAdapter = class {
-  constructor(root2) {
+  constructor(root2, channel = "xiaohongshu_web", pageProgram = browserProgram) {
     this.root = root2;
+    this.channel = channel;
+    this.pageProgram = pageProgram;
   }
   root;
+  channel;
+  pageProgram;
   async upstream() {
     return import(pathToFileURL(
       join2(this.root, "node_modules/@jackwener/opencli/dist/src/browser/daemon-transport.js")
@@ -948,7 +957,7 @@ var BrowserAdapter = class {
     try {
       const h = await this.health();
       return {
-        channel: "xiaohongshu_web",
+        channel: this.channel,
         status: "connected",
         backend: "OpenCLI",
         version: "2.0.2",
@@ -971,7 +980,7 @@ var BrowserAdapter = class {
       }
       return {
         profiles,
-        channel: "xiaohongshu_web",
+        channel: this.channel,
         status: "unavailable",
         error: e instanceof BridgeError ? e.code : "BACKEND_NOT_INSTALLED",
         required: "\u672C\u5730 Chrome\u3001OpenCLI 2.0.2\u3001Browser Bridge 1.0.26"
@@ -986,7 +995,7 @@ var BrowserAdapter = class {
     if (!target)
       throw new BridgeError("BACKEND_CONTRACT_UNSUPPORTED", "\u7ED1\u5B9A\u672A\u8FD4\u56DE\u53EF\u9760\u7684 page \u6807\u8BC6");
     const b = {
-      channel: "xiaohongshu_web",
+      channel: this.channel,
       backend: "OpenCLI",
       backend_version: "2.0.2",
       profile: h.profile,
@@ -994,12 +1003,21 @@ var BrowserAdapter = class {
       target,
       session
     };
-    const o = await this.inspect(b);
-    if (o.blocker) throw new BridgeError(o.blocker);
-    if (a.expected_account && o.account !== hash(a.expected_account))
-      throw new BridgeError("ACCOUNT_MISMATCH");
-    if (!o.account && !a.user_bound)
-      throw new BridgeError("ACCOUNT_UNVERIFIED", "\u65E0\u6CD5\u8BC6\u522B\u8D26\u53F7\uFF0C\u9700\u8981\u7528\u6237\u660E\u786E\u9009\u62E9\u5F53\u524D\u8D26\u53F7");
+    let o;
+    try {
+      o = await this.inspect(b);
+      assertObservation(b, o);
+      if (a.expected_account && o.account !== hash(a.expected_account))
+        throw new BridgeError("ACCOUNT_MISMATCH");
+      if (!o.account && !a.user_bound)
+        throw new BridgeError("ACCOUNT_UNVERIFIED", "\u65E0\u6CD5\u8BC6\u522B\u8D26\u53F7\uFF0C\u9700\u8981\u7528\u6237\u660E\u786E\u9009\u62E9\u5F53\u524D\u8D26\u53F7");
+    } catch (e) {
+      try {
+        await this.unbind(b);
+      } catch {
+      }
+      throw e;
+    }
     return {
       ...b,
       account: o.account,
@@ -1014,9 +1032,10 @@ var BrowserAdapter = class {
       session: b.session,
       contextId: b.profile,
       page: b.target,
-      code: `(${browserProgram.toString()})(${JSON.stringify({ action: "inspect" })})`
+      code: `(${this.pageProgram.toString()})(${JSON.stringify({ action: "inspect" })})`
     });
     const d = r.data;
+    if (d?.bridge_error) throw new BridgeError(d.bridge_error);
     if (!d || !d.document || !r.page) throw new BridgeError("BACKEND_CONTRACT_UNSUPPORTED");
     return { ...d, account: d.account, target: r.page, connection: h.connection };
   }
@@ -1028,7 +1047,7 @@ var BrowserAdapter = class {
       session: b.session,
       contextId: b.profile,
       page: b.target,
-      code: `(${browserProgram.toString()})(${JSON.stringify({ ...p, guard, deadline: Date.now() + 1e4 })})`
+      code: `(${this.pageProgram.toString()})(${JSON.stringify({ ...p, guard, deadline: Date.now() + 1e4 })})`
     });
     if (r.page !== b.target) throw new BridgeError("TARGET_CHANGED");
     if (r.data?.bridge_error) throw new BridgeError(r.data.bridge_error);
@@ -1283,6 +1302,301 @@ function hashScreenRef(target, chat2) {
   return createHash2("sha256").update(JSON.stringify({ target, chat: chat2, backend: "screen-readonly" })).digest("hex");
 }
 
+// server/src/adapters/instagram-program.ts
+async function instagramProgram(p) {
+  try {
+    if (!["inspect", "search_start", "search_result", "post_open", "post_read"].includes(p.action))
+      throw new Error("INSTAGRAM_READ_ONLY");
+    const origins = ["https://www.instagram.com", "https://instagram.com"];
+    if (!origins.includes(location.origin)) throw new Error("TARGET_CHANGED");
+    const visible = (e) => {
+      const r = e.getBoundingClientRect();
+      const s = getComputedStyle(e);
+      return r.width > 0 && r.height > 0 && s.visibility !== "hidden" && s.display !== "none" && !e.closest('[hidden],[aria-hidden="true"]');
+    };
+    const list = (selector, root2 = document) => Array.from(root2.querySelectorAll(selector)).filter(visible);
+    const text2 = (e) => (e.textContent || "").trim();
+    const renderedText = (e) => {
+      const visit = (node) => !visible(node) ? "" : Array.from(node.childNodes).map(
+        (n) => n.nodeType === Node.TEXT_NODE ? n.textContent || "" : n instanceof Element ? n.tagName === "BR" ? "\n" : visit(n) : ""
+      ).join("");
+      return visit(e).trim();
+    };
+    const parsePost = (raw2) => {
+      try {
+        const u = new URL(raw2, location.href);
+        const m = u.pathname.match(/^\/(p|reel)\/([A-Za-z0-9_-]{1,64})\/$/);
+        if (!origins.includes(u.origin) || u.username || u.password || !m) return void 0;
+        return {
+          shortcode: m[2],
+          kind: m[1],
+          post_url: `https://www.instagram.com/${m[1]}/${m[2]}/`
+        };
+      } catch {
+        return void 0;
+      }
+    };
+    const accountRaw = () => {
+      const candidates = list("a[href]").filter(
+        (a) => ["Profile", "\u4E2A\u4EBA\u4E3B\u9875", "\u4E2A\u4EBA\u8D44\u6599", "\uD504\uB85C\uD544"].includes(text2(a)) || !!a.querySelector(
+          'svg[aria-label="Profile"],svg[aria-label="\u4E2A\u4EBA\u4E3B\u9875"],svg[aria-label="\u4E2A\u4EBA\u8D44\u6599"],svg[aria-label="\uD504\uB85C\uD544"]'
+        )
+      );
+      const names = candidates.map((a) => {
+        try {
+          const u = new URL(a.getAttribute("href") || "", location.href);
+          return origins.includes(u.origin) && !u.username && !u.password ? u.pathname.match(/^\/([A-Za-z0-9._]+)\/$/)?.[1] : void 0;
+        } catch {
+          return void 0;
+        }
+      }).filter(Boolean);
+      return names.length === 1 ? names[0] : void 0;
+    };
+    const blocker = () => {
+      if (/^\/(challenge|checkpoint)\//.test(location.pathname) || list('iframe[src*="captcha"], [data-testid="captcha"]').length)
+        return "HUMAN_VERIFICATION_REQUIRED";
+      if (location.pathname.startsWith("/accounts/login") || list('input[type="password"]').length)
+        return "AUTH_REQUIRED";
+      for (const dialog of list('[role="dialog"], [role="alert"]')) {
+        const t = text2(dialog);
+        if (/确认.*身份|安全验证|security check|confirm.*identity/i.test(t))
+          return "HUMAN_VERIFICATION_REQUIRED";
+        if (/请稍后重试|Try again later/i.test(t)) return "POLICY_LIMITED";
+        if (/登录|Log in/i.test(t) && list('a[href*="/accounts/login"]', dialog).length)
+          return "AUTH_REQUIRED";
+      }
+      return void 0;
+    };
+    const w = window;
+    const state = w.__codexInstagramBridge || (w.__codexInstagramBridge = { document: crypto.randomUUID() });
+    const raw = accountRaw();
+    const account = raw ? Array.from(
+      new Uint8Array(
+        await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(raw)))
+      )
+    ).map((v) => v.toString(16).padStart(2, "0")).join("") : void 0;
+    const guard = () => {
+      if (!origins.includes(location.origin)) throw new Error("TARGET_CHANGED");
+      const block = blocker();
+      if (block) throw new Error(block);
+      if (raw !== accountRaw()) throw new Error("ACCOUNT_MISMATCH");
+      if (p.deadline && Date.now() > p.deadline) throw new Error("TIMEOUT_BEFORE_DISPATCH");
+      if (p.guard && (p.guard.document !== state.document || p.guard.origin !== location.origin))
+        throw new Error("TARGET_CHANGED");
+      if (p.guard?.account && p.guard.account !== account) throw new Error("ACCOUNT_MISMATCH");
+    };
+    if (p.action === "inspect")
+      return {
+        document: state.document,
+        origin: location.origin,
+        account,
+        blocker: blocker(),
+        evidence: { source: "instagram_visible_dom", partial: true }
+      };
+    guard();
+    const main = () => {
+      const roots = list('main, [role="main"]');
+      if (roots.length !== 1) throw new Error("UI_CHANGED");
+      return roots[0];
+    };
+    const cards = () => {
+      const seen = /* @__PURE__ */ new Set();
+      return list("a[href]", main()).flatMap((a) => {
+        const post = parsePost(a.getAttribute("href") || "");
+        if (!post || seen.has(post.post_url)) return [];
+        seen.add(post.post_url);
+        const img = list("img[alt]", a)[0];
+        return [
+          {
+            type: "post",
+            ...post,
+            preview: (img?.getAttribute("alt") || renderedText(a)).slice(0, 500)
+          }
+        ];
+      });
+    };
+    const searchFields = () => list(
+      'input[aria-label="\u641C\u7D22\u8F93\u5165"], input[aria-label="Search input"], input[placeholder="\u641C\u7D22"], input[placeholder="Search"]'
+    );
+    if (p.action === "search_start") {
+      if (typeof p.request_id !== "string" || !p.request_id) throw new Error("UI_CHANGED");
+      const fields = searchFields();
+      if (!fields.length) {
+        if (state.openingSearch !== p.request_id) {
+          const links = list("a[href]").filter((a) => {
+            try {
+              const u = new URL(a.getAttribute("href") || "", location.href);
+              return origins.includes(u.origin) && u.pathname === "/explore/" && /^(搜索|Search)$/.test(text2(a));
+            } catch {
+              return false;
+            }
+          });
+          if (links.length !== 1) throw new Error("UI_CHANGED");
+          guard();
+          state.openingSearch = p.request_id;
+          links[0].click();
+        }
+        return { pending: true };
+      }
+      if (fields.length !== 1 || fields[0].disabled || fields[0].readOnly)
+        throw new Error("UI_CHANGED");
+      const field = fields[0];
+      const buttons = list('button,[role="button"]', field.parentElement).filter(
+        (b) => /^(搜索|Search)$/.test(text2(b)) || !!b.querySelector('svg[aria-label="\u641C\u7D22"],svg[aria-label="Search"]')
+      );
+      if (buttons.length !== 1) throw new Error("UI_CHANGED");
+      const query = String(p.query);
+      if (state.search?.request_id === p.request_id && state.search.submitted && state.search.query === query && field.value === query)
+        return { submitted: true };
+      state.search = {
+        request_id: p.request_id,
+        query,
+        old: JSON.stringify(cards().map((c) => c.post_url)),
+        submitted: false
+      };
+      guard();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(field, query);
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      field.dispatchEvent(new Event("change", { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      guard();
+      if (!field.isConnected || field.value !== query) throw new Error("UI_CHANGED");
+      state.search.submitted = true;
+      field.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          code: "Enter",
+          keyCode: 13,
+          which: 13,
+          bubbles: true
+        })
+      );
+      field.dispatchEvent(
+        new KeyboardEvent("keyup", {
+          key: "Enter",
+          code: "Enter",
+          keyCode: 13,
+          which: 13,
+          bubbles: true
+        })
+      );
+      return { submitted: true };
+    }
+    if (p.action === "search_result") {
+      const fields = searchFields();
+      if (!state.search || state.search.request_id !== p.request_id || state.search.query !== p.query || fields.length !== 1 || fields[0].value !== p.query)
+        throw new Error("UI_CHANGED");
+      const url = new URL(location.href);
+      if (url.pathname !== "/explore/search/keyword/" || url.searchParams.get("q") !== p.query)
+        return { pending: true };
+      const results = cards();
+      if (!results.length || JSON.stringify(results.map((c) => c.post_url)) === state.search.old)
+        return { pending: true };
+      return {
+        query: p.query,
+        results: results.slice(0, Math.min(p.limit || 3, 10)),
+        source: "instagram_visible_dom",
+        partial: true,
+        observed_at: Date.now()
+      };
+    }
+    const desired = parsePost(p.post_url);
+    if (!desired || desired.post_url !== p.post_url.replace("https://instagram.com/", "https://www.instagram.com/"))
+      throw new Error("INVALID_POST_URL");
+    const current = parsePost(location.href);
+    if (p.action === "post_open") {
+      if (current?.post_url === desired.post_url) return { opened: true };
+      const links = list("a[href]", main()).filter(
+        (a) => parsePost(a.getAttribute("href") || "")?.post_url === desired.post_url
+      );
+      if (links.length !== 1) throw new Error("POST_NOT_VISIBLE");
+      guard();
+      links[0].click();
+      return { opened: true };
+    }
+    if (current?.post_url !== desired.post_url) return { pending: true };
+    const articles = list("article");
+    if (!articles.length) return { pending: true };
+    if (articles.length !== 1) throw new Error("UI_CHANGED");
+    const permalink = list("a[href]", articles[0]).filter((a) => list("time[datetime]", a).length > 0).map((a) => parsePost(a.getAttribute("href") || "")?.post_url).filter(Boolean);
+    if (permalink.length !== 1 || permalink[0] !== desired.post_url) return { pending: true };
+    const captions = list('h1, [data-testid="post-caption"]', articles[0]);
+    if (!captions.length) return { pending: true };
+    if (captions.length !== 1) throw new Error("UI_CHANGED");
+    const caption = renderedText(captions[0]);
+    if (!caption) throw new Error("POST_TEXT_UNAVAILABLE");
+    guard();
+    return {
+      ...desired,
+      caption: caption.slice(0, 2e4),
+      source: "instagram_visible_dom",
+      partial: true,
+      comments: [],
+      observed_at: Date.now()
+    };
+  } catch (e) {
+    const code = e.message;
+    const known = [
+      "INSTAGRAM_READ_ONLY",
+      "TARGET_CHANGED",
+      "ACCOUNT_MISMATCH",
+      "AUTH_REQUIRED",
+      "HUMAN_VERIFICATION_REQUIRED",
+      "POLICY_LIMITED",
+      "UI_CHANGED",
+      "TIMEOUT_BEFORE_DISPATCH",
+      "INVALID_POST_URL",
+      "POST_NOT_VISIBLE",
+      "POST_TEXT_UNAVAILABLE"
+    ];
+    return { bridge_error: known.includes(code) ? code : "UI_CHANGED" };
+  }
+}
+
+// server/src/adapters/instagram.ts
+var InstagramAdapter = class extends BrowserAdapter {
+  constructor(root2) {
+    super(root2, "instagram_web", instagramProgram);
+  }
+  async execute(tool, a, b, checkpoint, check) {
+    if (b.channel !== "instagram_web") throw new BridgeError("CHANNEL_MISMATCH");
+    check();
+    if (tool === "ig_search") {
+      await this.poll(
+        b,
+        { action: "search_start", query: a.query, request_id: a.client_request_id },
+        check
+      );
+      checkpoint("instagram_search_submitted");
+      return this.poll(
+        b,
+        {
+          action: "search_result",
+          query: a.query,
+          limit: a.limit,
+          request_id: a.client_request_id
+        },
+        check
+      );
+    }
+    if (tool === "ig_read_post") {
+      await this.program(b, { action: "post_open", post_url: a.post_url });
+      checkpoint("instagram_post_opened");
+      return this.poll(b, { action: "post_read", post_url: a.post_url }, check);
+    }
+    throw new BridgeError("INSTAGRAM_READ_ONLY");
+  }
+  async prepare(_kind, _payload, _b, _check) {
+    throw new BridgeError("INSTAGRAM_READ_ONLY");
+  }
+  async dispatch(_op, _b, _check) {
+    throw new BridgeError("INSTAGRAM_READ_ONLY");
+  }
+  async reconcile(_op, _b) {
+    throw new BridgeError("INSTAGRAM_READ_ONLY");
+  }
+};
+
 // server/src/schemas.ts
 import { z } from "zod";
 var ref = z.string().min(1).max(256);
@@ -1299,9 +1613,9 @@ var commit = z.object({ ...task, operation_id: ref, payload_version: z.number().
 var chat = ref;
 var note = z.string().regex(/^[a-f0-9]{24}$/);
 var schemas = {
-  bridge_doctor: z.object({ channel: z.enum(["xiaohongshu_web", "wechat_macos"]).optional() }).strict(),
+  bridge_doctor: z.object({ channel: z.enum(["xiaohongshu_web", "instagram_web", "wechat_macos"]).optional() }).strict(),
   bridge_bind: z.object({
-    channel: z.enum(["xiaohongshu_web", "wechat_macos"]),
+    channel: z.enum(["xiaohongshu_web", "instagram_web", "wechat_macos"]),
     profile: ref.optional(),
     expected_account: ref.optional(),
     user_bound: z.boolean().default(false),
@@ -1330,6 +1644,15 @@ var schemas = {
     limit: z.number().int().min(1).max(20).default(5)
   }).strict(),
   xhs_read_note: z.object({ ...task, note_id: note, comment_limit: z.number().int().min(0).max(20).default(0) }).strict(),
+  ig_search: z.object({
+    ...task,
+    query: z.string().trim().min(1).max(100),
+    limit: z.number().int().min(1).max(10).default(3)
+  }).strict(),
+  ig_read_post: z.object({
+    ...task,
+    post_url: z.string().max(256).regex(/^https:\/\/(?:www\.)?instagram\.com\/(?:p|reel)\/[A-Za-z0-9_-]{1,64}\/$/)
+  }).strict(),
   xhs_prepare_post: z.object({
     ...task,
     payload: z.object({
@@ -1367,6 +1690,7 @@ store.recover();
 store.purge();
 var coordinator = new Coordinator(store, {
   xiaohongshu_web: new BrowserAdapter(root),
+  instagram_web: new InstagramAdapter(root),
   wechat_macos: new WechatAdapter(root)
 });
 var socket = join4(path, "bridge.sock");

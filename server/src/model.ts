@@ -23,7 +23,11 @@ export class BridgeError extends Error {
     super(code === detail ? code : `${code}: ${detail}`);
   }
 }
-export type Channel = 'xiaohongshu_web' | 'wechat_macos';
+export type Channel = 'xiaohongshu_web' | 'instagram_web' | 'wechat_macos';
+export const browserOrigins: Partial<Record<Channel, string[]>> = {
+  xiaohongshu_web: ['https://www.xiaohongshu.com', 'https://creator.xiaohongshu.com'],
+  instagram_web: ['https://www.instagram.com', 'https://instagram.com'],
+};
 export type Binding = {
   binding_id: string;
   channel: Channel;
@@ -114,9 +118,6 @@ export function assertObservation(b: Binding, o: Observation) {
   if (o.blocker) throw new BridgeError(o.blocker);
   if (b.account && o.account !== b.account)
     throw new BridgeError('ACCOUNT_MISMATCH', '账号证据改变或消失');
-  if (
-    b.channel === 'xiaohongshu_web' &&
-    !['https://www.xiaohongshu.com', 'https://creator.xiaohongshu.com'].includes(o.origin ?? '')
-  )
+  if (browserOrigins[b.channel] && !browserOrigins[b.channel]!.includes(o.origin ?? ''))
     throw new BridgeError('TARGET_CHANGED', '页面离开允许的来源');
 }
