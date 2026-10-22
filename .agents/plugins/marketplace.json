@@ -1,0 +1,1 @@
+{"name":"session-bridge-local","interface":{"displayName":"本地中文操作工具"},"plugins":[{"name":"codex-session-bridge","source":{"source":"local","path":"./"},"policy":{"installation":"AVAILABLE","authentication":"ON_INSTALL"},"category":"Productivity"}]}
