@@ -920,7 +920,18 @@ var BrowserAdapter = class {
         }))
       };
     } catch (e) {
+      let profiles = [];
+      try {
+        const api = await this.upstream();
+        const status = await api.fetchDaemonStatus({ timeout: 1e3 });
+        profiles = (status?.profiles || []).map((p) => ({
+          profile: p.contextId,
+          connected: p.extensionConnected
+        }));
+      } catch {
+      }
       return {
+        profiles,
         channel: "xiaohongshu_web",
         status: "unavailable",
         error: e instanceof BridgeError ? e.code : "BACKEND_NOT_INSTALLED",
@@ -1159,6 +1170,8 @@ var WechatAdapter = class {
   async bind(a) {
     const o = await this.worker({ action: "bind" });
     if (o.blocker) throw new BridgeError(o.blocker);
+    if (a.expected_account && o.account !== hash(a.expected_account))
+      throw new BridgeError("ACCOUNT_MISMATCH");
     if (!o.account && !a.user_bound) throw new BridgeError("ACCOUNT_UNVERIFIED");
     return {
       channel: "wechat_macos",

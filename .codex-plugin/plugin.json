@@ -1,1 +1,8 @@
-{"name":"codex-session-bridge","version":"0.1.0","description":"本地小红书与微信会话桥","skills":"./skills/","mcpServers":"./.mcp.json","requires_local_executor":true}
+{
+  "name": "codex-session-bridge",
+  "version": "0.1.0",
+  "description": "本地小红书与微信会话桥",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "requires_local_executor": true
+}

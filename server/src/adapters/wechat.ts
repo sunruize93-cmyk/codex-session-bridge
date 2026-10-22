@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import {
   BridgeError,
+  hash,
   type Adapter,
   type Binding,
   type Operation,
@@ -74,6 +75,8 @@ export class WechatAdapter implements Adapter {
   async bind(a: any) {
     const o = await this.worker({ action: 'bind' });
     if (o.blocker) throw new BridgeError(o.blocker);
+    if (a.expected_account && o.account !== hash(a.expected_account))
+      throw new BridgeError('ACCOUNT_MISMATCH');
     if (!o.account && !a.user_bound) throw new BridgeError('ACCOUNT_UNVERIFIED');
     return {
       channel: 'wechat_macos' as const,

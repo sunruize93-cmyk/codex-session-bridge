@@ -87,7 +87,17 @@ export class BrowserAdapter implements Adapter {
         })),
       };
     } catch (e) {
+      let profiles: any[] = [];
+      try {
+        const api = await this.upstream();
+        const status = await api.fetchDaemonStatus({ timeout: 1000 });
+        profiles = (status?.profiles || []).map((p: any) => ({
+          profile: p.contextId,
+          connected: p.extensionConnected,
+        }));
+      } catch {}
       return {
+        profiles,
         channel: 'xiaohongshu_web',
         status: 'unavailable',
         error: e instanceof BridgeError ? e.code : 'BACKEND_NOT_INSTALLED',

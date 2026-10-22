@@ -15,6 +15,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run check
       - run: npm run build
+      - run: git diff --exit-code -- server/dist
       - run: npm test
       - run: npm run format:check
       - run: python3 -m unittest discover -s wechat-worker -p 'test_*.py'

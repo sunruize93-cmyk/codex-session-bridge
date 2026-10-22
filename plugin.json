@@ -1,7 +1,16 @@
 {
-  "$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name":"codex-session-bridge",
-  "version":"0.1.0",
-  "description":"在已有本地会话中操作小红书和微信，支持暂停、恢复与防重复提交。",
-  "extensions":{"com.openai":{"onboardingSkill":"./skills/setup/SKILL.md","requires_local_executor":true,"interface":{"displayName":"小红书与微信会话桥","shortDescription":"固定会话，串行操作，验证暂停，未知结果先核对"}}}
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "codex-session-bridge",
+  "version": "0.1.0",
+  "description": "在已有本地会话中操作小红书和微信，支持暂停、恢复与防重复提交。",
+  "extensions": {
+    "com.openai": {
+      "onboardingSkill": "./skills/setup/SKILL.md",
+      "requires_local_executor": true,
+      "interface": {
+        "displayName": "小红书与微信会话桥",
+        "shortDescription": "固定会话，串行操作，验证暂停，未知结果先核对"
+      }
+    }
+  }
 }
