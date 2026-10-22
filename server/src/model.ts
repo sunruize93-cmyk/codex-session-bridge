@@ -38,6 +38,8 @@ export type Binding = {
   state: 'READY' | 'PAUSED' | 'NEEDS_REBIND' | 'CLOSED';
   session?: string;
   document?: string;
+  screen_chat_name?: string;
+  screen_chat_ref?: string;
   created_at: string;
 };
 export type Observation = {

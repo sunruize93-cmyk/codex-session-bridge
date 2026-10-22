@@ -1138,6 +1138,7 @@ var BrowserAdapter = class {
 
 // server/src/adapters/wechat.ts
 import { spawn } from "node:child_process";
+import { createHash as createHash2 } from "node:crypto";
 import { join as join3 } from "node:path";
 var WechatAdapter = class {
   constructor(root2) {
@@ -1205,19 +1206,27 @@ var WechatAdapter = class {
     }
   }
   async bind(a) {
-    const o = await this.worker({ action: "bind" });
+    const screen = a.read_only_backend === "screen";
+    const o = await this.worker({
+      action: "bind",
+      ...screen ? { backend: "screen-readonly", screen_chat_name: a.expected_chat } : {}
+    });
     if (o.blocker) throw new BridgeError(o.blocker);
     if (a.expected_account && o.account !== hash(a.expected_account))
       throw new BridgeError("ACCOUNT_MISMATCH");
     if (!o.account && !a.user_bound) throw new BridgeError("ACCOUNT_UNVERIFIED");
     return {
       channel: "wechat_macos",
-      backend: "native-ax",
+      backend: screen ? "screen-readonly" : "native-ax",
       backend_version: "0.1.0",
       connection: o.connection,
       target: o.target,
       account: o.account,
-      assurance: o.account ? "verified" : "user_bound"
+      assurance: o.account ? "verified" : "user_bound",
+      ...screen ? {
+        screen_chat_name: a.expected_chat,
+        screen_chat_ref: hashScreenRef(o.target, a.expected_chat)
+      } : {}
     };
   }
   async inspect(b) {
@@ -1232,6 +1241,7 @@ var WechatAdapter = class {
     throw new BridgeError("UNSUPPORTED_TOOL");
   }
   async prepare(kind, payload, b, check) {
+    if (b.backend === "screen-readonly") throw new BridgeError("SCREEN_MODE_READ_ONLY");
     if (kind !== "message") throw new BridgeError("UNSUPPORTED_TOOL");
     check();
     return this.worker({ action: "prepare", ...payload, binding: b });
@@ -1246,6 +1256,7 @@ var WechatAdapter = class {
     };
   }
   async dispatch(op, b, check) {
+    if (b.backend === "screen-readonly") throw new BridgeError("SCREEN_MODE_READ_ONLY");
     check();
     return this.worker({
       action: "dispatch",
@@ -1256,6 +1267,7 @@ var WechatAdapter = class {
     });
   }
   async reconcile(op, b) {
+    if (b.backend === "screen-readonly") throw new BridgeError("SCREEN_MODE_READ_ONLY");
     return this.worker({
       action: "reconcile",
       ...op.payload,
@@ -1265,6 +1277,9 @@ var WechatAdapter = class {
     });
   }
 };
+function hashScreenRef(target, chat2) {
+  return createHash2("sha256").update(JSON.stringify({ target, chat: chat2, backend: "screen-readonly" })).digest("hex");
+}
 
 // server/src/schemas.ts
 import { z } from "zod";
@@ -1287,8 +1302,13 @@ var schemas = {
     channel: z.enum(["xiaohongshu_web", "wechat_macos"]),
     profile: ref.optional(),
     expected_account: ref.optional(),
-    user_bound: z.boolean().default(false)
-  }).strict(),
+    user_bound: z.boolean().default(false),
+    read_only_backend: z.literal("screen").optional(),
+    expected_chat: z.string().min(1).max(100).optional()
+  }).strict().refine(
+    (a) => a.read_only_backend ? a.channel === "wechat_macos" && a.user_bound && !!a.expected_chat && !a.expected_account : !a.expected_chat,
+    "\u5C4F\u5E55\u53EA\u8BFB\u6A21\u5F0F\u4EC5\u9650\u7528\u6237\u660E\u786E\u9009\u62E9\u7684\u5FAE\u4FE1\u804A\u5929\uFF0C\u9700\u8981 user_bound \u4E0E expected_chat"
+  ),
   bridge_inspect_session: z.object(binding).strict(),
   bridge_unbind: z.object(binding).strict(),
   bridge_get_task: z.object({

@@ -24,8 +24,17 @@ export const schemas: Record<string, z.ZodTypeAny> = {
       profile: ref.optional(),
       expected_account: ref.optional(),
       user_bound: z.boolean().default(false),
+      read_only_backend: z.literal('screen').optional(),
+      expected_chat: z.string().min(1).max(100).optional(),
     })
-    .strict(),
+    .strict()
+    .refine(
+      (a) =>
+        a.read_only_backend
+          ? a.channel === 'wechat_macos' && a.user_bound && !!a.expected_chat && !a.expected_account
+          : !a.expected_chat,
+      '屏幕只读模式仅限用户明确选择的微信聊天，需要 user_bound 与 expected_chat',
+    ),
   bridge_inspect_session: z.object(binding).strict(),
   bridge_unbind: z.object(binding).strict(),
   bridge_get_task: z

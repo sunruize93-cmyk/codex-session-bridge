@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import {
   BridgeError,
@@ -73,19 +74,29 @@ export class WechatAdapter implements Adapter {
     }
   }
   async bind(a: any) {
-    const o = await this.worker({ action: 'bind' });
+    const screen = a.read_only_backend === 'screen';
+    const o = await this.worker({
+      action: 'bind',
+      ...(screen ? { backend: 'screen-readonly', screen_chat_name: a.expected_chat } : {}),
+    });
     if (o.blocker) throw new BridgeError(o.blocker);
     if (a.expected_account && o.account !== hash(a.expected_account))
       throw new BridgeError('ACCOUNT_MISMATCH');
     if (!o.account && !a.user_bound) throw new BridgeError('ACCOUNT_UNVERIFIED');
     return {
       channel: 'wechat_macos' as const,
-      backend: 'native-ax',
+      backend: screen ? 'screen-readonly' : 'native-ax',
       backend_version: '0.1.0',
       connection: o.connection,
       target: o.target,
       account: o.account,
       assurance: o.account ? ('verified' as const) : ('user_bound' as const),
+      ...(screen
+        ? {
+            screen_chat_name: a.expected_chat,
+            screen_chat_ref: hashScreenRef(o.target, a.expected_chat),
+          }
+        : {}),
     };
   }
   async inspect(b: Binding): Promise<Observation> {
@@ -106,6 +117,7 @@ export class WechatAdapter implements Adapter {
     throw new BridgeError('UNSUPPORTED_TOOL');
   }
   async prepare(kind: Operation['kind'], payload: any, b: Binding, check: () => void) {
+    if (b.backend === 'screen-readonly') throw new BridgeError('SCREEN_MODE_READ_ONLY');
     if (kind !== 'message') throw new BridgeError('UNSUPPORTED_TOOL');
     check();
     return this.worker({ action: 'prepare', ...payload, binding: b });
@@ -120,6 +132,7 @@ export class WechatAdapter implements Adapter {
     };
   }
   async dispatch(op: Operation, b: Binding, check: () => void) {
+    if (b.backend === 'screen-readonly') throw new BridgeError('SCREEN_MODE_READ_ONLY');
     check();
     return this.worker({
       action: 'dispatch',
@@ -130,6 +143,7 @@ export class WechatAdapter implements Adapter {
     });
   }
   async reconcile(op: Operation, b: Binding) {
+    if (b.backend === 'screen-readonly') throw new BridgeError('SCREEN_MODE_READ_ONLY');
     return this.worker({
       action: 'reconcile',
       ...op.payload,
@@ -138,4 +152,10 @@ export class WechatAdapter implements Adapter {
       binding: b,
     });
   }
+}
+function hashScreenRef(target: string, chat: string) {
+  // Match Python's insertion-ordered compact JSON; this is a read reference, not authorization.
+  return createHash('sha256')
+    .update(JSON.stringify({ target, chat, backend: 'screen-readonly' }))
+    .digest('hex');
 }

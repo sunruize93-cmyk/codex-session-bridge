@@ -25,8 +25,13 @@ var schemas = {
     channel: z.enum(["xiaohongshu_web", "wechat_macos"]),
     profile: ref.optional(),
     expected_account: ref.optional(),
-    user_bound: z.boolean().default(false)
-  }).strict(),
+    user_bound: z.boolean().default(false),
+    read_only_backend: z.literal("screen").optional(),
+    expected_chat: z.string().min(1).max(100).optional()
+  }).strict().refine(
+    (a) => a.read_only_backend ? a.channel === "wechat_macos" && a.user_bound && !!a.expected_chat && !a.expected_account : !a.expected_chat,
+    "\u5C4F\u5E55\u53EA\u8BFB\u6A21\u5F0F\u4EC5\u9650\u7528\u6237\u660E\u786E\u9009\u62E9\u7684\u5FAE\u4FE1\u804A\u5929\uFF0C\u9700\u8981 user_bound \u4E0E expected_chat"
+  ),
   bridge_inspect_session: z.object(binding).strict(),
   bridge_unbind: z.object(binding).strict(),
   bridge_get_task: z.object({

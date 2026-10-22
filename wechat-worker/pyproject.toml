@@ -2,4 +2,10 @@
 name = "session-bridge-wechat-worker"
 version = "0.1.0"
 requires-python = ">=3.12,<3.13"
-dependencies = ["pyobjc-framework-Cocoa==12.0", "pyobjc-framework-ApplicationServices==12.0", "pyobjc-framework-Quartz==12.0"]
+dependencies = [
+    "pyobjc-framework-Cocoa==12.0",
+    "pyobjc-framework-ApplicationServices==12.0",
+    "pyobjc-framework-Quartz==12.0",
+    "pyobjc-framework-screencapturekit==12.0",
+    "pyobjc-framework-vision==12.0",
+]

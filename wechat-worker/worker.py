@@ -11,6 +11,14 @@ def digest(v):
 def main(p):
     if platform.system() != 'Darwin':
         fail('UNSUPPORTED_PLATFORM')
+    if p.get('backend') == 'screen-readonly' or (p.get('binding') or {}).get('backend') == 'screen-readonly':
+        from screen_reader import main as screen_main
+        try:
+            return screen_main(p)
+        except RuntimeError:
+            raise
+        except Exception:
+            fail('SCREEN_CAPTURE_UNAVAILABLE')
     import AppKit
     import ApplicationServices as AX
     import Quartz
@@ -240,6 +248,6 @@ if __name__ == '__main__':
         data = json.loads(sys.stdin.buffer.read(262145))
         output = {'ok': True, 'data': main(data)}
     except Exception as e:
-        known = {'OS_PERMISSION_REQUIRED', 'APP_NOT_RUNNING', 'WECHAT_AX_UNAVAILABLE', 'TARGET_CHANGED', 'ACCOUNT_MISMATCH', 'AUTH_REQUIRED', 'FOCUS_LOST', 'RECIPIENT_AMBIGUOUS', 'UI_CHANGED', 'PAYLOAD_CHANGED', 'ACCOUNT_UNVERIFIED', 'RECIPIENT_UNVERIFIED', 'OUTCOME_UNKNOWN', 'UNSUPPORTED_ACTION', 'UNSUPPORTED_PLATFORM', 'TIMEOUT_BEFORE_DISPATCH'}
+        known = {'OS_PERMISSION_REQUIRED', 'APP_NOT_RUNNING', 'WECHAT_AX_UNAVAILABLE', 'TARGET_CHANGED', 'ACCOUNT_MISMATCH', 'AUTH_REQUIRED', 'FOCUS_LOST', 'RECIPIENT_AMBIGUOUS', 'UI_CHANGED', 'PAYLOAD_CHANGED', 'ACCOUNT_UNVERIFIED', 'RECIPIENT_UNVERIFIED', 'OUTCOME_UNKNOWN', 'UNSUPPORTED_ACTION', 'UNSUPPORTED_PLATFORM', 'TIMEOUT_BEFORE_DISPATCH', 'SCREEN_TARGET_UNVERIFIED', 'SCREEN_CAPTURE_UNAVAILABLE', 'SCREEN_CAPTURE_EMPTY', 'SCREEN_CAPTURE_RESTRICTED', 'SCREEN_OCR_UNAVAILABLE', 'SCREEN_MODE_READ_ONLY'}
         output = {'ok': False, 'error': str(e) if str(e) in known else 'WECHAT_AX_UNAVAILABLE'}
     print(json.dumps(output, ensure_ascii=False))

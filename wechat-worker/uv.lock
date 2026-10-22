@@ -39,6 +39,32 @@ wheels = [
 ]
 
 [[package]]
+name = "pyobjc-framework-coremedia"
+version = "12.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyobjc-core" },
+    { name = "pyobjc-framework-cocoa" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/55/6d/ed4f8b525a0520e609cea57fd0677bf7792e168297ad5577df1088eb7cd6/pyobjc_framework_coremedia-12.0.tar.gz", hash = "sha256:d7f76d2eb2890be9f8836b95682e83fa7f158c92043958daa71845fbc4a01ba9", size = 89928, upload-time = "2025-10-21T08:31:40.487Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ec/15/9853b2e75db0bf47a80412f9584a84966310e3168dabde8d43f2c6fa9ff1/pyobjc_framework_coremedia-12.0-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:06e824c97391cacacfe6be4b80acdcb6924a8087d03d9af35ea0edf502f2ada1", size = 29406, upload-time = "2025-10-21T08:02:55.95Z" },
+]
+
+[[package]]
+name = "pyobjc-framework-coreml"
+version = "12.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyobjc-core" },
+    { name = "pyobjc-framework-cocoa" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0c/a0/875b5174794c984df60944be54df0282945f8bae4a606fbafa0c6b717ddd/pyobjc_framework_coreml-12.0.tar.gz", hash = "sha256:e1d7a9812886150881c86000fba885cb15201352c75fb286bd9e3a1819b5a4d5", size = 40814, upload-time = "2025-10-21T08:31:53.83Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/09/86/b13dc7bed8ea3261d827be31d5239dbd234ca11fc4050f0a5a0dcbff97b9/pyobjc_framework_coreml-12.0-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:901a6343aabd1c1e8f2904abb35fe32d4335783ddec9be96279668b53ac0f4f9", size = 11366, upload-time = "2025-10-21T08:03:49.507Z" },
+]
+
+[[package]]
 name = "pyobjc-framework-coretext"
 version = "12.0"
 source = { registry = "https://pypi.org/simple" }
@@ -66,6 +92,35 @@ wheels = [
 ]
 
 [[package]]
+name = "pyobjc-framework-screencapturekit"
+version = "12.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyobjc-core" },
+    { name = "pyobjc-framework-cocoa" },
+    { name = "pyobjc-framework-coremedia" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4c/e5/6e1a3a5588d28eb7a80a2bd2feb8a76e32662ce169b309068121e94b0ea9/pyobjc_framework_screencapturekit-12.0.tar.gz", hash = "sha256:278743764adfbfc046b831bceaae2f0b4a42ea3b0b40e4ee349f9efcb62374e5", size = 32967, upload-time = "2025-10-21T08:40:23.005Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9b/1f/c06b269839eaa9efb8f5be0585daa2c5cb056f30df9566c1b9a71be23346/pyobjc_framework_screencapturekit-12.0-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:07c1310f85bd661fb395895f13f1c69cdd5d83017e66c95e4daa122f97da11a8", size = 11512, upload-time = "2025-10-21T08:19:53.508Z" },
+]
+
+[[package]]
+name = "pyobjc-framework-vision"
+version = "12.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyobjc-core" },
+    { name = "pyobjc-framework-cocoa" },
+    { name = "pyobjc-framework-coreml" },
+    { name = "pyobjc-framework-quartz" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0f/5a/07cdead5adb77d0742b014fa742d503706754e3ad10e39760e67bb58b497/pyobjc_framework_vision-12.0.tar.gz", hash = "sha256:942c9583f1d887ac9f704f3b0c21b3206b68e02852a87219db4309bb13a02f14", size = 59905, upload-time = "2025-10-21T08:41:53.741Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d4/1b/2043e99b8989b110ddb1eabf6355bd0b412527abda375bafa438f8a255e1/pyobjc_framework_vision-12.0-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:2d1238127088ef50613a8c022d7b7a8487064d09a83c188e000b90528c8eaf2e", size = 16631, upload-time = "2025-10-21T08:24:20.217Z" },
+]
+
+[[package]]
 name = "session-bridge-wechat-worker"
 version = "0.1.0"
 source = { virtual = "." }
@@ -73,6 +128,8 @@ dependencies = [
     { name = "pyobjc-framework-applicationservices" },
     { name = "pyobjc-framework-cocoa" },
     { name = "pyobjc-framework-quartz" },
+    { name = "pyobjc-framework-screencapturekit" },
+    { name = "pyobjc-framework-vision" },
 ]
 
 [package.metadata]
@@ -80,4 +137,6 @@ requires-dist = [
     { name = "pyobjc-framework-applicationservices", specifier = "==12.0" },
     { name = "pyobjc-framework-cocoa", specifier = "==12.0" },
     { name = "pyobjc-framework-quartz", specifier = "==12.0" },
+    { name = "pyobjc-framework-screencapturekit", specifier = "==12.0" },
+    { name = "pyobjc-framework-vision", specifier = "==12.0" },
 ]
