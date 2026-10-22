@@ -160,6 +160,27 @@ test('遮罩优先于背景旧卡片，正文验证码文字不误报', async ()
     p.close();
   }
 });
+test('笔记路由先更新时等待正文挂载，重复正文拒绝读取', async () => {
+  const p = page('');
+  try {
+    const note = '0123456789abcdef01234567';
+    p.w.history.pushState({}, '', '/explore/' + note);
+    const o = await p.fn({ action: 'inspect' });
+    const args = {
+      action: 'note_read',
+      note_id: note,
+      comment_limit: 0,
+      guard: { document: o.document, origin: o.origin },
+    };
+    assert.equal((await p.fn(args)).pending, true);
+    p.w.document.body.innerHTML = '<div id="detail-desc">合成正文</div>';
+    assert.equal((await p.fn(args)).body, '合成正文');
+    p.w.document.body.innerHTML += '<div data-testid="note-body">另一正文</div>';
+    assert.equal((await p.fn(args)).bridge_error, 'UI_CHANGED');
+  } finally {
+    p.close();
+  }
+});
 test('旧结果未变化不返回为本次搜索，输入作为数据传递', async () => {
   const p = page('<input id="search-input"><button aria-label="搜索">search</button>' + cards);
   try {

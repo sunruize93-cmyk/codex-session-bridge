@@ -750,7 +750,10 @@ async function browserProgram(p) {
     }
     if (p.action === "note_read") {
       if (noteId() !== p.note_id) return { pending: true };
-      const body = one('#detail-desc, .note-scroller .desc, [data-testid="note-body"]');
+      const bodies = list('#detail-desc, .note-scroller .desc, [data-testid="note-body"]');
+      if (!bodies.length) return { pending: true };
+      if (bodies.length !== 1) throw new Error("UI_CHANGED");
+      const body = bodies[0];
       return {
         note_id: p.note_id,
         title: list("#detail-title,.note-scroller .title")[0]?.textContent?.trim() || "",
