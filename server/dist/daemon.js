@@ -610,6 +610,13 @@ async function browserProgram(p) {
         return void 0;
       }
     };
+    const cardSummaries = () => list('section.note-item, .note-item, [data-testid="note-card"]').map((e) => {
+      const a = Array.from(e.querySelectorAll("a[href]")).find(noteLinkId);
+      return {
+        note_id: a && noteLinkId(a),
+        title: (e.querySelector(".title")?.textContent || a?.textContent || "").trim().slice(0, 500)
+      };
+    }).filter((x) => x.note_id);
     const readAccount = () => {
       const links = list(
         'a.user[href*="/user/profile/"], .user a[href*="/user/profile/"], .side-bar a[href*="/user/profile/"]'
@@ -679,8 +686,11 @@ async function browserProgram(p) {
     if (p.action === "search_start") {
       const field = searchField();
       set(field, p.query);
-      const old = list('section.note-item, .note-item, [data-testid="note-card"]');
-      w.__csbSearch = { query: p.query, old: old.map((e) => e.outerHTML).join(""), changed: false };
+      w.__csbSearch = {
+        query: p.query,
+        oldSemantic: JSON.stringify(cardSummaries()),
+        changed: false
+      };
       const observer = new MutationObserver((records) => {
         if (records.some(
           (r) => Array.from(r.addedNodes).concat(Array.from(r.removedNodes)).some(
@@ -707,7 +717,7 @@ async function browserProgram(p) {
     if (p.action === "search_result") {
       const state = w.__csbSearch;
       const field = searchField();
-      const cards = list('section.note-item, .note-item, [data-testid="note-card"]');
+      const cards = cardSummaries();
       const rawKeyword = new URL(location.href).searchParams.get("keyword");
       let keywordMatches = rawKeyword === p.query;
       if (!keywordMatches && rawKeyword !== null) {
@@ -716,15 +726,9 @@ async function browserProgram(p) {
         } catch {
         }
       }
-      if (!state || state.query !== p.query || value(field) !== p.query || !keywordMatches || cards.map((e) => e.outerHTML).join("") === state.old)
+      if (!state || state.query !== p.query || value(field) !== p.query || !keywordMatches || !state.oldSemantic || JSON.stringify(cards) === state.oldSemantic)
         return { pending: true };
-      const results = cards.map((e) => {
-        const a = Array.from(e.querySelectorAll("a[href]")).find(noteLinkId);
-        return {
-          note_id: a && noteLinkId(a),
-          title: (e.querySelector(".title")?.textContent || e.textContent || "").trim().slice(0, 500)
-        };
-      }).filter((x) => x.note_id).slice(0, p.limit);
+      const results = cards.slice(0, p.limit);
       if (!results.length) return { pending: true };
       return {
         query: p.query,

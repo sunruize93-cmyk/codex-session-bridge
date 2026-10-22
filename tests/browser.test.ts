@@ -204,6 +204,31 @@ test('旧结果未变化不返回为本次搜索，输入作为数据传递', as
     p.close();
   }
 });
+test('旧卡片点赞、图片或属性变化不冒充新搜索结果', async () => {
+  const p = page(
+    '<input id="search-input"><button aria-label="搜索"></button><section class="note-item"><a href="/explore/0123456789abcdef01234567">old result</a><span class="likes">8</span><img src="old.png"></section>',
+  );
+  try {
+    const o = await p.fn({ action: 'inspect' });
+    const guard = { document: o.document, origin: o.origin };
+    await p.fn({ action: 'search_start', query: 'new query', guard });
+    p.w.history.pushState({}, '', '?keyword=new%20query');
+    p.w.document.querySelector('.likes').textContent = '9';
+    p.w.document.querySelector('img').src = 'loaded.png';
+    p.w.document.querySelector('.note-item').dataset.loaded = 'true';
+    assert.equal(
+      (await p.fn({ action: 'search_result', query: 'new query', limit: 3, guard })).pending,
+      true,
+    );
+    p.w.document.querySelector('.note-item a').textContent = 'new result';
+    assert.equal(
+      (await p.fn({ action: 'search_result', query: 'new query', limit: 3, guard })).results.length,
+      1,
+    );
+  } finally {
+    p.close();
+  }
+});
 test('旧文档、账号改变不点击', async () => {
   const p = page(
     '<a class="user" href="/user/profile/0123456789abcdef01234567">me</a><input id="search-input"><button aria-label="搜索">search</button>',
