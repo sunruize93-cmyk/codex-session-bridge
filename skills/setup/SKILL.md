@@ -1,9 +1,11 @@
 ---
 name: session-bridge-setup
-description: 安装、诊断本地小红书与微信会话桥，检查 Chrome 扩展和 macOS 权限。
+description: 安装、诊断小红书与 Instagram 浏览器会话桥，微信为需明确选择的实验适配器。
 ---
 
-用中文。先 bridge_doctor，不自动登录或新建 profile。按 README 安装锁定依赖、构建、运行 scripts/install.mjs。读取不足时仅报告真实缺失：Chrome、Browser Bridge 1.0.26、实际 Python 工作者辅助功能权限。
+用中文。先 bridge_doctor 并指定所选 channel（instagram_web 或 xiaohongshu_web）。默认仅浏览器，未经明确微信授权禁止 channel:wechat_macos，不运行微信工作者。不自动登录或新建 profile。按 README 安装插件；浏览器功能只需 Node、Python 3 系统锁、Chrome/扩展，不要求微信、PyObjC 或系统 AX 权限。
+
+0.2.0 含 20 个工具，Instagram 仅 ig_search 与 ig_read_post，无写入接口。安装后分别核对工具发现、对应渠道连接及业务。COORDINATOR_UPGRADE_REQUIRED 表示旧协调进程被版本封套安全拒绝；先检查本插件未决任务并安全重启，不调用旧业务 doctor、不回退协议、不删库绕过。更新后重开 Codex 对话。
 
 doctor 的微信分支仅检查元数据，不访问应用 AX 树；controls_checked:false 不能解释为未授权或读取成功。不要在只测试浏览器时反复探测微信。安全重登不是重复开权限可以解决的问题；出现后停止业务，不把再次人工登录计为故障已修复。
 

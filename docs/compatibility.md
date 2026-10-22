@@ -14,7 +14,15 @@
 | Browser Bridge | 1.0.26 已连接           | 真实 profile 与绑定页已核对                          |
 | 本地插件       | 桌面工具已加载          | 正式 MCP 搜索及正文读取均返回 SUCCEEDED              |
 
-微信不支持 Windows/Linux。native-ax 模式只处理显式可访问 AX 控件；搜索候选不唯一、编辑器/发送按钮不可访问时失败。通用 doctor 仅检查环境与权限元数据，不创建微信 AX 应用对象。裸窗口返回 WECHAT_AX_UNAVAILABLE，安全重登模态层返回 AUTH_REQUIRED。没有证明 AX 访问触发本次重登，也没有证明减少探测已消除此问题。
+0.2.0 新增 Instagram：正式 MCP 搜索 `seoul cafe` 返回 3 条帖子，读取其中 1 篇说明 198 字符；账号为 user_bound，稳定账号 ID 未核实。详情见 [Instagram 验收](instagram-validation.md)。Chrome 连接不代表各平台已登录；doctor 只检查 transport。
+
+Instagram 只支持正常关键词结果页及当前/可见链接的帖子说明，结果 partial；不提供账号/标签检索、评论读取、点赞、关注、私信、发布、Stories 或视频转写。文章自身时间 permalink 必须匹配目标短码；真实界面的作者前缀链接归一处理，评论 permalink 和外站不能充当文章身份。正文排除隐藏子树。即使 trusted-host 开启，其写方法也在 transport 前拒绝。
+
+搜索使用正常网页导航，核对 URL 查询、可见查询标题及文档/卡片身份；不调用私有 API。只读导航 command_result_unknown 时仅核对，不重放导航，核对失败不成功。新业务请求重新导航，不永久按关键词缓存旧结果。
+
+默认 doctor 只检查浏览器，微信须显式 channel:wechat_macos。IPC v2 在业务分发前拒绝旧客户端/旧协调器，不回退旧协议或自动杀进程；升级需安全结束旧协调器并在新 Codex 对话加载新版本。
+
+微信不支持 Windows/Linux。native-ax 模式只处理显式可访问 AX 控件；搜索候选不唯一、编辑器/发送按钮不可访问时失败。显式微信 doctor 仅检查环境与权限元数据，不创建微信 AX 应用对象；默认 doctor 不启动微信工作者。裸窗口返回 WECHAT_AX_UNAVAILABLE，安全重登模态层返回 AUTH_REQUIRED。没有证明 AX 访问触发本次重登，也没有证明减少探测已消除此问题。
 
 新增显式 screen-readonly 模式：要求用户手动打开目标独立聊天窗口并保持微信前台；窗口标题精确匹配、同名窗口唯一，拒绝微信/WeChat/Weixin 主标题及不可共享窗口。绑定和检查只读元数据；find/read 才截取单帧并用本地 Apple Vision 核对标题、提取最多 3 行可见文字，标明 partial、message_boundaries_verified:false。无 AX、无前置/点击/键盘、无图像落盘、无历史遍历；所有写入与核对接口在观察应用前拒绝。仅支持具有 SCScreenshotConfiguration 的 macOS（本机为 26）；不是原生 AX 的自动降级后端。
 

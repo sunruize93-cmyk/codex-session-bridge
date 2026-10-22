@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "小红书与微信的本地会话操作插件",
+  "description": "小红书、Instagram 与实验微信的本地会话操作插件",
   "engines": {
     "node": ">=22.22.0 <23 || >=24.0.0 <25"
   },

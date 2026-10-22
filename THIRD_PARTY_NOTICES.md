@@ -7,3 +7,5 @@
 - 浏览器页面和 AX 测试样本为合成 fixtures，不包含实际账号/聊天内容。
 
 参考链接：https://github.com/jackwener/OpenCLI/tree/v2.0.2 、https://github.com/BiboyQG/WeChat-MCP/tree/cc470367ca6613b129f7e2bb742e6cc57df8c4d6 。
+
+- Instagram 0.2.0 适配器为本项目固定 DOM 程序，仅读取正常网页；没有复制 Instagram 客户端、调用私有 API 或在 fixtures 中保存真实帖子。

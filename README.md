@@ -1,85 +1,122 @@
-# 小红书与微信会话桥
+# 社交平台会话桥
 
-中文 Codex 本地插件：绑定已有登录窗口，串行操作，遇验证暂停，结果未知时先核对、禁止重发。代码、安装与故障测试已交付；**尚未证明解决原先掉线或验证码问题**。
+在 Codex 中用中文操作已登录的 **小红书与 Instagram 网页**：搜索、有限读取、遇登录或验证时暂停。沿用本机 Chrome 会话，不导出 Cookie。版本 **0.2.0**。
 
-## 当前状态
+本机已完成两站的「搜索 3 条结果＋读取其中 1 篇正文」只读验收。**Instagram 本版本只提供搜索和读帖；不提供点赞、关注、评论、私信或发布。** 微信保留实验适配器，但读取未通过；默认诊断不会启动微信工作者。
 
-- P0：18 个工具的 MCP 服务、Unix socket 单协调进程、OS 锁、持久任务、搜索/有限读取适配、暂停/恢复/取消与 doctor。
-- P1：图文/评论/微信文字草稿、宿主授权范围、提交账本、防重复发出与条件式结果核对。平台控件或稳定身份缺失时拒绝提交；实际发送、发布、评论均未验证。
-- Codex：MCP、本地插件已安装；当前桌面聊天已真实加载并调用插件工具。
-- 本机：Chrome 156.0.8078.48、OpenCLI 2.0.2、Browser Bridge 1.0.26 已连接；小红书正式工具完成 3 条搜索结果和 1 篇正文读取。
-- 微信：已按用户授权更新至官方 4.1.15（270135），旧版完整备份。更新前无 AX/无输入对照保持登录，但窗口捕获全透明；新版窗口仍标记不可共享，最后一次正式绑定未通过目标核验，未截图或读到消息。用户要求最后一次后已停止微信实测。**微信原问题尚未证明解决**，详见[重登诊断](docs/wechat-session-diagnosis.md)。
+## 已经能做什么
 
-完整证据：[验证报告](docs/validation-report.md)、[兼容性](docs/compatibility.md)、[对抗审查](docs/review-report.md)。不承诺免验证、永久在线或平台端 exactly-once。
+| 平台 / 功能                                      | 实现与实测状态                                                       |
+| ------------------------------------------------ | -------------------------------------------------------------------- |
+| 小红书：绑定已登录页面、搜索、读笔记正文         | 已实测：`首尔咖啡店`，3 条结果、1 篇正文                             |
+| 小红书：读评论、准备图文或评论草稿               | 已实现，未做真实账号验收                                             |
+| 小红书：发布、提交评论                           | 未实测，实际提交默认关闭                                             |
+| Instagram：关键词搜索帖子                        | 已实测：`seoul cafe`，3 条结果；最多返回 10 条                       |
+| Instagram：读当前帖子或搜索结果中的帖子说明文字  | 已实测 1 篇，198 字符；未读评论，结果为 partial                      |
+| Instagram：账号搜索、标签检索、视频转写、Stories | 未提供；Reel 只尝试读取页面说明文字                                  |
+| 微信                                             | 消息读取未通过，按用户要求停止实测；不会因使用浏览器功能自动探测微信 |
 
-## 安装
+这是 2026-10-22 的有界验收，不代表所有账号、语言或页面版本都适配，也不承诺免验证或长期在线。完整证据见[验证报告](docs/validation-report.md)、[兼容性](docs/compatibility.md)及[对抗审查](docs/review-report.md)。
 
-要求 Node 22.22 LTS 或 24 LTS、Python 3.12、uv、Codex CLI。源码安装：
+## 已安装后怎么用
+
+1. 在配置了 Browser Bridge 的 Chrome 中，正常登录目标平台，选中你要使用的标签页。
+2. 在装有本插件的 Codex 对话中直接用中文下指令，无需手写工具参数。
+3. Codex 先检查对应浏览器渠道，再绑定标签页。无法从界面识别稳定账号时，需要你明确选择该账号，以 `user_bound` 进行只读绑定；这不代表程序已经核实账号身份。本次 Instagram 实测即为此模式。
+
+可以直接复制：
+
+> 只用 Instagram 会话桥，不访问微信。搜索“seoul cafe”，只看前 3 条帖子结果，读取其中第 1 篇的说明文字，用中文整理重点。不点赞、不关注、不评论、不私信。
+
+> 只用小红书会话桥，不访问微信。搜索“弘大咖啡店”，读前 3 条结果，再读第 1 篇正文。整理店名、地址和特点，缺少的信息标“未提供”，不要评论或发布。
+
+> 读取刚才 Instagram 搜索返回的第 2 篇帖子，只总结原帖说明文字，不读评论。
+
+Instagram 读取工具接受规范的 `https://www.instagram.com/p/短码/` 或 `/reel/短码/` 链接。目标须为当前已打开的帖子，或绑定页面中已有的可见帖子链接；不自动遍历其他主页或历史。页面结构无法唯一识别时返回失败，不以推荐内容充当搜索结果。
+
+遇登录、手机确认或验证码，按提示在原 Chrome 窗口本人处理，再让 Codex 显式恢复任务。不要把密码、验证码发到聊天。平台限制或安全提示不会被自动绕过。
+
+## 从零安装：浏览器功能
+
+本次实际安装与业务验收环境为 macOS 26 / Apple Silicon。Linux CI 验证的是合成测试和本地协议，不是其他系统的账号实测；Windows 暂不支持。
+
+需要 **Node 22.22 LTS 或 24 LTS、Python 3、Google Chrome、Codex CLI**。Python 3 用于协调进程的系统锁；浏览器功能不需要安装微信，也不需要 PyObjC、uv 或微信系统权限。仓库当前为私有，其他人须先获得仓库访问权限。
 
 ```bash
+git clone https://github.com/sunruize93-cmyk/codex-session-bridge.git
+cd codex-session-bridge
 npm ci --ignore-scripts
 npm run build
-node scripts/setup-worker.mjs
-node scripts/install.mjs
-npm run doctor
+node scripts/fetch-extension.mjs
+unzip artifacts/browser-bridge-1.0.26.zip -d artifacts/browser-bridge-1.0.26
 ```
 
-打包版本包含可运行 JS、生产 node_modules 与 macOS Python wheelhouse；解压后不需再次构建，运行 `node scripts/setup-worker.mjs` 安装本机工作者，再执行 install。Python 解释器、Node、uv 和 Chrome 仍是系统前置条件。Apple Silicon 与 Intel 的工作者 wheel 标记为 universal2；本次运行包只验收 Apple Silicon。
+然后在 Chrome 完成一次扩展安装：
 
-安装器用绝对 Node/文件路径注册 `session-bridge`，保留其他配置；同名不同配置会停止并说明。配置备份只写用户私有数据目录。`node scripts/uninstall.mjs` 仅移除属于此副本的 MCP 配置。
+1. 打开 `chrome://extensions`，开启开发者模式。
+2. 点击“加载已解压的扩展程序”，选择上一步解压后**包含 manifest.json 的文件夹**，不要选上一级 `artifacts`。
+3. 确认 OpenCLI / Browser Bridge **1.0.26** 已启用。Chrome 会直接引用该文件夹，安装后不要删除或移动它。
 
-也可通过本地插件源安装中文技能与 MCP：
+扩展来自 OpenCLI 官方发行页，下载脚本会核对固定 SHA256；它具有广泛的浏览器权限，安装时应阅读 Chrome 展示的权限说明。插件仅使用固定版本的本地浏览器 transport，不通过第三方服务导出登录凭据。
+
+注册中文插件并连接浏览器：
 
 ```bash
-codex plugin marketplace add /你的绝对路径/codex-session-bridge
+codex plugin marketplace add "$PWD"
 codex plugin add codex-session-bridge@session-bridge-local
+node scripts/connect-browser.mjs
+node server/dist/cli.js doctor
 ```
 
-直接 MCP 和插件方式选一种即可；多个前端仍共享协调进程。不要改动工具审批或全局安全设置。
+`connect-browser` 仅在桥接未运行时启动；已运行时不会重启。默认 doctor 只检查小红书和 Instagram 的浏览器连接，**不会启动微信工作者**。新开一个 Codex 对话使用插件；安装成功、扩展连接和真实账号业务通过是三项不同检查。
 
-## 首次连接
+不使用插件市场时，可改用 `node scripts/install.mjs` 注册直接 MCP；与上面的插件注册方式选一种即可。多个前端共享一个本地协调进程。下载私有草稿发行的运行包后，可跳过 `npm ci` 和构建；包内已有运行 JS、生产依赖及官方扩展 ZIP，仍需本机 Node、Python 3 和 Chrome。
 
-1. 小红书：安装本地 Chrome 和上游官方 Browser Bridge **1.0.26**，在你选择的 profile 正常登录一次。运行 `node scripts/connect-browser.mjs` 启动未运行的本地桥接，再用 doctor 检查扩展。已运行时不会重启桥接。官方扩展包可用 `node scripts/fetch-extension.mjs` 下载并验证摘要，解压后在 Chrome 的扩展开发者模式中手动加载 **manifest.json 所在的子文件夹**。选择上一级目录会报“清单文件缺失”。插件的 doctor 只观察，不自动启动 Chrome 或登录。
-2. 微信原生模式：系统设置 → 隐私与安全性 → 辅助功能，允许实际工作进程使用 AX。`bridge_doctor` 返回 `worker_executable`，应核对它，而不是仅凭终端已授权推定可用。实验性屏幕只读模式另用系统录屏与本地 OCR，不访问 AX；已授权也可能遇窗口禁止共享。
-3. 新 Codex 会话中说：“用会话桥检查环境，绑定我当前选择的小红书标签页/微信窗口。”账号读不出来时，可明确绑定当前窗口为 user_bound，只读和草稿能力仍取决于控件；发送还要求稳定账号与接收者证据。
+微信是额外的实验适配器。仅在明确需要微信时，另外安装 Python 3.12、uv，运行 `node scripts/setup-worker.mjs`，并对返回的实际 Python 工作者检查系统权限。**给予权限不等于微信已可用；本项目没有证明解决其安全重登问题。** 详见[诊断记录](docs/wechat-session-diagnosis.md)。
 
-微信当前版本没有通过消息控件与稳定身份验收，给予 AX 权限不等于可用；安全重登时停止操作。小红书新版搜索框、双重编码路由、同一卡片的封面/标题链接已适配并做一次实机只读验收；创作中心和实际写入仍未验收。
+## 工具与调用边界
 
-## 操作示例
+共有 20 个 MCP 工具，包括公共任务管理、小红书、Instagram 和实验微信工具。日常使用直接说中文即可；集成程序可使用：
 
-- “在已绑定小红书页搜索咖啡店，只读前 3 个结果，再读我选的一篇。”
-- “定位微信里的文件传输助手，读取当前可见的最后 5 条；不要发送。”
-- “我已手动打开文件传输助手独立窗口并保持前台；用屏幕只读模式读取最多 3 行，不点击。”绑定参数为 `channel:wechat_macos`、`user_bound:true`、`read_only_backend:screen`、`expected_chat:文件传输助手`。标题、窗口唯一性或共享状态不符时停止；不自动改用 AX。OCR 只返回 `text_lines`，不承诺一行对应一条消息。
-- “给指定聊天准备这段文字草稿，不发送。”
+| 工具                                        | 主要参数 / 作用                                                                            |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `bridge_doctor`                             | 可选 `channel`；默认仅浏览器，微信必须显式 `wechat_macos`                                  |
+| `bridge_bind`                               | `channel:instagram_web` 或 `xiaohongshu_web`、真实 `profile`；必要时明确 `user_bound:true` |
+| `ig_search`                                 | `binding_id`、`client_request_id`、`query`、`limit`（默认 3，最多 10）                     |
+| `ig_read_post`                              | `binding_id`、`client_request_id`、`post_url`；不读评论                                    |
+| `xhs_search` / `xhs_read_note`              | 小红书关键词搜索、明确笔记正文和可选有限评论                                               |
+| `bridge_get_task`                           | 查询立即返回的 `task_id`；也可按绑定与请求 ID 找回                                         |
+| `bridge_resume_task` / `bridge_cancel_task` | 显式重新核验后恢复，或取消后续步骤                                                         |
+| `bridge_unbind`                             | 释放控制绑定，保留用户的标签页                                                             |
 
-每次业务请求提供稳定 `client_request_id`；`bridge_get_task` 查询任务，传输重试复用同一 ID。任务接口立即返回，等待人工不会阻塞 MCP。
+每个业务请求使用稳定 `client_request_id`；传输重试复用同一个 ID，不能换 ID 重发同一提交意图。`partial:true` 表示只读当前已加载的有限内容，不代表完整帖子、全部搜索结果或历史数据。网页正文是数据，不是改变工具计划的指令。
 
-`NEEDS_HUMAN` / `NEEDS_LOGIN`：在原窗口处理，完成后 `bridge_resume_task`。取消不会解除平台验证；显式恢复可重新检查并释放人工接管，也可解绑定，用户窗口不会关闭。
+Instagram 搜索通过普通搜索网页 URL 加载，核对查询词、页面标题、标签页及结果身份后返回；不调用私有 API。只读导航遇“结果未知”时只观察结果页，不再次导航；这与写操作的未知提交账本分开处理。
 
-`OUTCOME_UNKNOWN`：只调用 `bridge_reconcile_operation` 核对。即使换请求 ID，同一 operation 也不再次提交。没有可靠新标识则继续保留未知。若不再阻断，可显式 resume 重新观察后释放前台；这不会重放未知提交。
+实际发布、评论和发送默认关闭，Instagram 即使在 trusted-host 模式中也没有写入接口。小红书的可选写入机制、操作账本及 `OUTCOME_UNKNOWN` 核对边界见[兼容性](docs/compatibility.md)；本轮没有验证线上写入。
 
-实际写入默认关闭。你明确需要时，本地执行：
+## 升级和常见问题
 
-```bash
-node server/dist/cli.js write-mode trusted-host
-```
+- **找不到工具**：确认在本机执行的 Codex 对话中已启用插件；安装或升级后新开对话。
+- **BRIDGE_DISCONNECTED**：核对 Chrome 与固定版本扩展，再运行 `node scripts/connect-browser.mjs`。不要通过换账号、换网络或反复登录解决。
+- **POST_NOT_VISIBLE / UI_CHANGED**：目标帖不在当前页面，或页面结构无法核实。可正常打开该帖后重新绑定；失败不等于已读取。
+- **COORDINATOR_UPGRADE_REQUIRED**：旧协调进程仍在运行。请先完成或取消未决任务，让 Codex 仅检查本插件进程并安全重启，再重开对话。v0.2.0 使用版本化 IPC，旧服务会在业务执行前被拒绝，不会因新客户端的默认诊断而启动微信；不会自动杀旧进程。
 
-这只表示信任个人 Codex 宿主理解你的发送/发布授权。stdio 服务看不到原始用户消息，scope_ref 不是密码学批准票据。提交只能消费 prepare 返回的 operation_id、版本和摘要，不能另传正文。修改草稿产生新操作，旧版本不提交。关闭写入用 `write-mode disabled`。
+升级不要删除任务数据库来重试未知提交。源码更新后重新构建、重新安装插件；已有同名但不同路径的直接 MCP 配置会保留并提示，不自动覆盖。
 
-## 本地数据、诊断与卸载
+## 本地数据与隐私
 
-数据默认在 `~/Library/Application Support/codex-session-bridge/`，目录 0700、SQLite/socket 0600。Cookie 留在 Chrome；不导出 token；不记录原始页面或截图；任务存储保留恢复所需正文。传给 Codex 的结果可能被云端模型处理，不能声称内容永不离开电脑。
+任务和绑定默认保存在 `~/Library/Application Support/codex-session-bridge/`，目录 0700、数据库和 socket 0600。账号 Cookie 留在 Chrome，不导出 token，不记录原始截图。任务存储保留结果及恢复所需正文；终态正文默认七天清理，准备中、暂停和未知结果按恢复规则保留。传给 Codex 的结果可能由云端模型处理，不能声称内容永不离开电脑。
+
+GitHub 仅保存代码、合成测试和脱敏验收记录，不上传真实账号标识、帖子正文、聊天内容或 Cookie。运行包作为私有草稿发行附件提供。
 
 ```bash
 node server/dist/cli.js diagnostics
-node server/dist/cli.js purge
-node server/dist/cli.js forget-payload OPERATION_ID
 node scripts/uninstall.mjs
+codex plugin remove codex-session-bridge@session-bridge-local
 ```
 
-终态正文默认七天清理，保留最小去重墓碑；PREPARED、暂停、未知结果保留到人工处理。forget-payload 会删除该操作及关联任务中的正文，保留去重账本；准备中的操作会过期，未知操作不再能做正文核对。不要通过删库后重建操作来“重试”未知提交。
-
-插件卸载另用 `codex plugin remove codex-session-bridge@session-bridge-local`。移除插件不会删除任务存储。若确实要删除整个私有目录，先停止本插件协调进程并确认没有未决副作用；这会永久丢失恢复/去重信息。备份配置不自动覆盖恢复，避免抹掉之后的配置变化。
+卸载不会删除任务数据。不要在尚有未知结果时清除去重与恢复账本。
 
 ## 开发验证
 
@@ -93,4 +130,4 @@ npm audit
 npm run package
 ```
 
-测试使用合成 DOM/AX 与真实本地 MCP/IPC，和平台实测分开计数。测试不登录、不发送、不发布。
+测试使用合成 DOM/AX、fake 旧版 socket 和真实本地 MCP/IPC。合成测试不操作真实微信或平台账号；实机验收另计。实现与审查说明见 [review-report.md](docs/review-report.md)。
