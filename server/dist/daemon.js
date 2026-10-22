@@ -1345,9 +1345,9 @@ async function instagramProgram(p) {
     };
     const accountRaw = () => {
       const candidates = list("a[href]").filter(
-        (a) => ["Profile", "\u4E2A\u4EBA\u4E3B\u9875", "\u4E2A\u4EBA\u8D44\u6599", "\uD504\uB85C\uD544"].includes(text2(a)) || !!a.querySelector(
+        (a) => !a.closest('main,[role="main"],article,[role="dialog"]') && (["Profile", "\u4E2A\u4EBA\u4E3B\u9875", "\u4E2A\u4EBA\u8D44\u6599", "\uD504\uB85C\uD544"].includes(text2(a)) || !!a.querySelector(
           'svg[aria-label="Profile"],svg[aria-label="\u4E2A\u4EBA\u4E3B\u9875"],svg[aria-label="\u4E2A\u4EBA\u8D44\u6599"],svg[aria-label="\uD504\uB85C\uD544"]'
-        )
+        ))
       );
       const names = candidates.map((a) => {
         try {

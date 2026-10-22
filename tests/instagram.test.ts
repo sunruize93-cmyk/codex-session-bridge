@@ -450,3 +450,15 @@ test('Instagram 帖子自身的作者前缀permalink可归一，评论permalink�
     p.close();
   }
 });
+
+test('Instagram 正文或作者名为Profile不能冒充当前账号证据', async () => {
+  const p = page(
+    '<main><article><a href="/some_author/">Profile</a><h1>synthetic</h1></article></main>',
+    post,
+  );
+  try {
+    assert.equal((await p.fn({ action: 'inspect' })).account, undefined);
+  } finally {
+    p.close();
+  }
+});

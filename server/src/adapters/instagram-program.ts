@@ -53,10 +53,11 @@ export async function instagramProgram(p: any): Promise<any> {
     const accountRaw = () => {
       const candidates = list('a[href]').filter(
         (a) =>
-          ['Profile', '个人主页', '个人资料', '프로필'].includes(text(a)) ||
-          !!a.querySelector(
-            'svg[aria-label="Profile"],svg[aria-label="个人主页"],svg[aria-label="个人资料"],svg[aria-label="프로필"]',
-          ),
+          !a.closest('main,[role="main"],article,[role="dialog"]') &&
+          (['Profile', '个人主页', '个人资料', '프로필'].includes(text(a)) ||
+            !!a.querySelector(
+              'svg[aria-label="Profile"],svg[aria-label="个人主页"],svg[aria-label="个人资料"],svg[aria-label="프로필"]',
+            )),
       );
       const names = candidates
         .map((a) => {
