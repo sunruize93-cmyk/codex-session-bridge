@@ -85,6 +85,36 @@ class ContractTests(unittest.TestCase):
         f=Fixture();f.area.attrs['AXTitle']='unexpected'
         with self.assertRaisesRegex(RuntimeError,'WECHAT_AX_UNAVAILABLE'):
             f.call('read')
+    def test_doctor_does_not_probe_application_ax_tree(self):
+        f=Fixture()
+        def forbidden(_):
+            raise AssertionError('doctor touched application AX')
+        f.modules['ApplicationServices'].AXUIElementCreateApplication=forbidden
+        self.assertFalse(f.call('doctor')['controls_checked'])
+        self.assertEqual(f.clicks,0)
+    def test_security_relogin_dialog_is_auth_required_without_clicking(self):
+        f=Fixture()
+        f.window.attrs['AXChildren']=[Node(AXRole='AXStaticText',AXValue='提示 为了你的账号安全，请重新登录。'),Node(AXRole='AXButton',AXTitle='我知道了')]
+        self.assertEqual(f.call('inspect')['blocker'],'AUTH_REQUIRED')
+        with self.assertRaisesRegex(RuntimeError,'AUTH_REQUIRED'):
+            f.call('find_chat',name='文件传输助手')
+        self.assertEqual(f.clicks,0)
+    def test_bare_window_is_not_ready_session(self):
+        f=Fixture();f.window.attrs['AXChildren']=[Node(AXRole='AXButton',AXTitle='关闭')]
+        self.assertEqual(f.call('bind')['blocker'],'WECHAT_AX_UNAVAILABLE')
+        self.assertEqual(f.clicks,0)
+    def test_same_security_text_in_real_chat_is_not_login_dialog(self):
+        f=Fixture();f.area.attrs['AXChildren']=[Node(AXRole='AXStaticText',AXValue='为了你的账号安全，请重新登录。')]
+        self.assertIsNone(f.call('inspect')['blocker'])
+    def test_security_sheet_over_background_chat_stops_before_click(self):
+        f=Fixture();f.window.attrs['AXChildren'].append(Node(AXRole='AXSheet',AXChildren=[Node(AXRole='AXStaticText',AXValue='为了你的账号安全，请重新登录。'),Node(AXRole='AXButton',AXTitle='我知道了')]))
+        self.assertEqual(f.call('inspect')['blocker'],'AUTH_REQUIRED')
+        with self.assertRaisesRegex(RuntimeError,'AUTH_REQUIRED'):
+            f.call('find_chat',name='同名联系人')
+        self.assertEqual(f.clicks,0)
+    def test_login_button_inside_message_is_not_login_screen(self):
+        f=Fixture();f.area.attrs['AXChildren']=[Node(AXRole='AXButton',AXTitle='登录')]
+        self.assertIsNone(f.call('inspect')['blocker'])
 
 if __name__ == '__main__':
     unittest.main()

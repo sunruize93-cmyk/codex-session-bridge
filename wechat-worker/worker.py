@@ -20,7 +20,7 @@ def main(p):
     trusted = bool(AX.AXIsProcessTrusted())
     apps = AppKit.NSRunningApplication.runningApplicationsWithBundleIdentifier_('com.tencent.xinWeChat')
     if p['action'] == 'doctor':
-        report = {'channel': 'wechat_macos', 'os': platform.mac_ver()[0], 'running': bool(apps), 'accessibility': trusted, 'screen_recording': bool(Quartz.CGPreflightScreenCaptureAccess()), 'screenshot_used': False, 'worker': sys.version.split()[0], 'worker_executable': sys.executable, 'controls_checked': False}
+        report = {'channel': 'wechat_macos', 'os': platform.mac_ver()[0], 'running': bool(apps), 'accessibility': trusted, 'screen_recording': bool(Quartz.CGPreflightScreenCaptureAccess()), 'screenshot_used': False, 'worker': sys.version.split()[0], 'worker_executable': sys.executable, 'controls_checked': False, 'diagnostic_mode': 'metadata_only'}
         if len(apps) == 1:
             try:
                 import plistlib
@@ -30,20 +30,7 @@ def main(p):
                 report['wechat_build'] = info.get('CFBundleVersion')
             except Exception:
                 report['wechat_version'] = 'unknown'
-        if trusted and len(apps) == 1:
-            root = AX.AXUIElementCreateApplication(apps[0].processIdentifier())
-            windows = get(root, 'AXWindows') or []
-            todo = list(windows); seen = set(); identifiers = []; roles = []
-            while todo and len(seen) < 1800:
-                el = todo.pop()
-                key = hash(el)
-                if key in seen:
-                    continue
-                seen.add(key)
-                identifiers.append(get(el, 'AXIdentifier'))
-                roles.append((get(el, 'AXRole'), get(el, 'AXTitle')))
-                todo.extend(get(el, 'AXChildren') or [])
-            report.update({'controls_checked': not todo, 'window_count': len(windows), 'chat_title_accessible': 'big_title_line_h_view' in identifiers, 'messages_accessible': ('AXList', 'Messages') in roles or ('AXList', '消息') in roles, 'editor_accessible': any(i in identifiers for i in ('chat_input', 'message_input', 'input_text_area')), 'stable_account_available': any(i in identifiers for i in ('current_account_id', 'wechat_account_id')), 'stable_recipient_available': 'current_chat_id' in identifiers})
+        # 通用环境检查不创建应用 AX 对象；只在显式业务请求中探测微信控件。
         return report
     if not trusted:
         fail('OS_PERMISSION_REQUIRED')
@@ -63,7 +50,7 @@ def main(p):
         import CoreFoundation
         window_key = CoreFoundation.CFHash(window)
     target = f'{connection}:{window_key}'
-    def walk(root, max_nodes=1800):
+    def walk(root, max_nodes=1800, child_cache=None):
         todo = [root]
         seen = set()
         while todo and len(seen) < max_nodes:
@@ -73,7 +60,10 @@ def main(p):
                 continue
             seen.add(identity)
             yield el
-            todo.extend(reversed(get(el, 'AXChildren') or []))
+            children = get(el, 'AXChildren') or []
+            if child_cache is not None:
+                child_cache[identity] = children
+            todo.extend(reversed(children))
         if todo:
             fail('WECHAT_AX_UNAVAILABLE')
     def nodes():
@@ -87,12 +77,38 @@ def main(p):
         return matches[0]
     def title():
         return label(unique(lambda e: get(e, 'AXIdentifier') == 'big_title_line_h_view'))
-    def account():
-        found = [label(e) for e in nodes() if get(e, 'AXIdentifier') in ('current_account_id', 'wechat_account_id')]
+    def account(elements=None):
+        found = [label(e) for e in (nodes() if elements is None else elements) if get(e, 'AXIdentifier') in ('current_account_id', 'wechat_account_id')]
         return digest(found[0]) if len(found) == 1 and found[0] else None
     def inspect():
-        login = [e for e in nodes() if get(e, 'AXRole') == 'AXButton' and label(e) in ('登录', 'Log In', '扫码登录')]
-        return {'connection': connection, 'target': target, 'account': account(), 'blocker': 'AUTH_REQUIRED' if login else None, 'evidence': {'ax_available': True}}
+        children = {}
+        elements = list(walk(window, child_cache=children))
+        labels = {hash(e): label(e) for e in elements}
+        roles = {hash(e): get(e, 'AXRole') for e in elements}
+        def descendants(root):
+            todo = [root]; seen = set(); result = []
+            while todo:
+                e = todo.pop(); key = hash(e)
+                if key in seen:
+                    continue
+                seen.add(key); result.append(e)
+                todo.extend(children.get(key, []))
+            return result
+        message_nodes = {hash(e) for area in elements if roles[hash(area)] == 'AXList' and get(area, 'AXTitle') in ('Messages', '消息') for e in descendants(area)}
+        eligible = [e for e in elements if hash(e) not in message_nodes]
+        identifiers = [get(e, 'AXIdentifier') for e in elements]
+        chat_controls = any(i == 'big_title_line_h_view' or str(i or '').startswith('session_item_') or i in ('search_field', 'search_input') for i in identifiers)
+        def auth_content(group):
+            notice = any('为了你的账号安全，请重新登录' in labels[hash(e)] or '为了你的帐号安全，请重新登录' in labels[hash(e)] for e in group)
+            acknowledge = any(roles[hash(e)] == 'AXButton' and labels[hash(e)] == '我知道了' for e in group)
+            login = any(roles[hash(e)] == 'AXButton' and labels[hash(e)] in ('登录', 'Log In', '扫码登录') for e in group)
+            return login or (notice and acknowledge)
+        modals = [e for e in eligible if roles[hash(e)] in ('AXSheet', 'AXDialog') or get(e, 'AXSubrole') in ('AXDialog', 'AXSystemDialog') or get(e, 'AXModal') is True]
+        modal_auth = any(auth_content([e for e in descendants(modal) if hash(e) not in message_nodes]) for modal in modals)
+        blocker = 'AUTH_REQUIRED' if modal_auth or (not chat_controls and auth_content(eligible)) else None
+        if not blocker and not chat_controls:
+            blocker = 'WECHAT_AX_UNAVAILABLE'
+        return {'connection': connection, 'target': target, 'account': account(elements), 'blocker': blocker, 'evidence': {'ax_available': chat_controls}}
     observed = inspect()
     if p['action'] in ('bind', 'inspect'):
         return observed
