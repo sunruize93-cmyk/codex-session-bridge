@@ -1358,7 +1358,8 @@ async function instagramProgram(p) {
       if (location.pathname.startsWith("/accounts/login") || list('input[type="password"]').length)
         return "AUTH_REQUIRED";
       for (const dialog of list('[role="dialog"], [role="alert"]')) {
-        const t = text2(dialog);
+        const outsideArticle = (node) => node.nodeType === Node.TEXT_NODE ? node.textContent || "" : node instanceof Element && (!visible(node) || node.matches('article,[data-testid="post-caption"]')) ? "" : Array.from(node.childNodes).map(outsideArticle).join("");
+        const t = outsideArticle(dialog);
         if (/确认.*身份|安全验证|security check|confirm.*identity/i.test(t))
           return "HUMAN_VERIFICATION_REQUIRED";
         if (/请稍后重试|Try again later/i.test(t)) return "POLICY_LIMITED";
@@ -1460,7 +1461,9 @@ async function instagramProgram(p) {
       field.dispatchEvent(new Event("change", { bubbles: true }));
       await new Promise((resolve) => setTimeout(resolve, 0));
       guard();
-      if (!field.isConnected || field.value !== query) throw new Error("UI_CHANGED");
+      const freshFields = searchFields();
+      if (freshFields.length !== 1 || freshFields[0] !== field || field.disabled || field.readOnly || !field.isConnected || field.value !== query)
+        throw new Error("UI_CHANGED");
       state.search.submitted = true;
       field.dispatchEvent(
         new KeyboardEvent("keydown", {
@@ -1716,15 +1719,19 @@ var server = createServer((client) => {
     if (nl < 0) return;
     handled = true;
     try {
-      const r = JSON.parse(body.slice(0, nl));
+      const envelope = JSON.parse(body.slice(0, nl));
+      if (envelope.tool !== "__session_bridge_rpc_v2" || envelope.args?.version !== 2)
+        throw new BridgeError("COORDINATOR_UPGRADE_REQUIRED");
+      const r = envelope.args;
       const args = input(r.tool, r.args);
       if (process.env.SESSION_BRIDGE_ISOLATED_TEST === "1" && !["bridge_doctor", "bridge_get_task"].includes(r.tool))
         throw new BridgeError("TEST_MODE_READ_ONLY");
       const data = await coordinator.call(r.tool, args);
-      client.end(JSON.stringify({ ok: true, data }) + "\n");
+      client.end(JSON.stringify({ protocol_version: 2, ok: true, data }) + "\n");
     } catch (e) {
       client.end(
         JSON.stringify({
+          protocol_version: 2,
           ok: false,
           error: e instanceof BridgeError ? e.code : e?.name === "ZodError" ? "INVALID_INPUT" : "INTERNAL_ERROR"
         }) + "\n"

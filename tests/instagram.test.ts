@@ -380,3 +380,40 @@ test('Instagram 同查询不同请求必须重新提交，旧结果等待更新'
     p.close();
   }
 });
+
+test('Instagram React等待后重核输入身份，隐藏旧控件不接收Enter', async () => {
+  const p = page(identity + field + '<main></main>');
+  try {
+    const old = p.w.document.querySelector('input');
+    let sent = 0;
+    old.addEventListener('keydown', () => sent++);
+    old.addEventListener('input', () => {
+      old.setAttribute('aria-hidden', 'true');
+      const next = old.cloneNode();
+      next.removeAttribute('aria-hidden');
+      old.parentElement.append(next);
+    });
+    assert.equal(
+      (await p.fn({ action: 'search_start', query: 'synthetic' })).bridge_error,
+      'UI_CHANGED',
+    );
+    assert.equal(sent, 0);
+  } finally {
+    p.close();
+  }
+});
+test('Instagram 对话框内帖子正文的限流字样不作为平台警告', async () => {
+  const p = page(
+    '<div role="dialog"><article><a href="/p/Synthetic_1/"><time datetime="2026-01-01">date</time></a><h1>Try again later 是合成正文</h1></article></div>',
+    post,
+  );
+  try {
+    assert.equal((await p.fn({ action: 'inspect' })).blocker, undefined);
+    assert.equal(
+      (await p.fn({ action: 'post_read', post_url: post })).caption,
+      'Try again later 是合成正文',
+    );
+  } finally {
+    p.close();
+  }
+});

@@ -81,7 +81,14 @@ export async function instagramProgram(p: any): Promise<any> {
       if (location.pathname.startsWith('/accounts/login') || list('input[type="password"]').length)
         return 'AUTH_REQUIRED';
       for (const dialog of list('[role="dialog"], [role="alert"]')) {
-        const t = text(dialog);
+        const outsideArticle = (node: Node): string =>
+          node.nodeType === Node.TEXT_NODE
+            ? node.textContent || ''
+            : node instanceof Element &&
+                (!visible(node) || node.matches('article,[data-testid="post-caption"]'))
+              ? ''
+              : Array.from(node.childNodes).map(outsideArticle).join('');
+        const t = outsideArticle(dialog);
         if (/确认.*身份|安全验证|security check|confirm.*identity/i.test(t))
           return 'HUMAN_VERIFICATION_REQUIRED';
         if (/请稍后重试|Try again later/i.test(t)) return 'POLICY_LIMITED';
@@ -201,7 +208,16 @@ export async function instagramProgram(p: any): Promise<any> {
       field.dispatchEvent(new Event('change', { bubbles: true }));
       await new Promise((resolve) => setTimeout(resolve, 0));
       guard();
-      if (!field.isConnected || field.value !== query) throw new Error('UI_CHANGED');
+      const freshFields = searchFields();
+      if (
+        freshFields.length !== 1 ||
+        freshFields[0] !== field ||
+        field.disabled ||
+        field.readOnly ||
+        !field.isConnected ||
+        field.value !== query
+      )
+        throw new Error('UI_CHANGED');
       state.search.submitted = true;
       field.dispatchEvent(
         new KeyboardEvent('keydown', {

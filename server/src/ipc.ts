@@ -16,7 +16,12 @@ export async function request(tool: string, args: any, autostart = true): Promis
         socket.destroy();
         reject(new BridgeError('IPC_TIMEOUT'));
       }, 20000);
-      socket.once('connect', () => socket.write(JSON.stringify({ tool, args }) + '\n'));
+      socket.once('connect', () =>
+        socket.write(
+          JSON.stringify({ tool: '__session_bridge_rpc_v2', args: { version: 2, tool, args } }) +
+            '\n',
+        ),
+      );
       socket.on('data', (d) => {
         output += d;
         if (output.length > 1048576) {
@@ -31,6 +36,11 @@ export async function request(tool: string, args: any, autostart = true): Promis
         socket.end();
         try {
           const r = JSON.parse(output.slice(0, end));
+          if (r.protocol_version !== 2)
+            throw new BridgeError(
+              'COORDINATOR_UPGRADE_REQUIRED',
+              '旧协调进程不兼容；请先结束未决任务并安全重启本插件，不会回退旧协议',
+            );
           if (r.ok) resolve(r.data);
           else reject(new BridgeError(r.error));
         } catch (e) {

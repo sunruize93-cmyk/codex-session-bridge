@@ -45,7 +45,10 @@ const server = createServer((client) => {
     if (nl < 0) return;
     handled = true;
     try {
-      const r = JSON.parse(body.slice(0, nl));
+      const envelope = JSON.parse(body.slice(0, nl));
+      if (envelope.tool !== '__session_bridge_rpc_v2' || envelope.args?.version !== 2)
+        throw new BridgeError('COORDINATOR_UPGRADE_REQUIRED');
+      const r = envelope.args;
       const args = input(r.tool, r.args);
       if (
         process.env.SESSION_BRIDGE_ISOLATED_TEST === '1' &&
@@ -53,10 +56,11 @@ const server = createServer((client) => {
       )
         throw new BridgeError('TEST_MODE_READ_ONLY');
       const data = await coordinator.call(r.tool, args);
-      client.end(JSON.stringify({ ok: true, data }) + '\n');
+      client.end(JSON.stringify({ protocol_version: 2, ok: true, data }) + '\n');
     } catch (e) {
       client.end(
         JSON.stringify({
+          protocol_version: 2,
           ok: false,
           error:
             e instanceof BridgeError

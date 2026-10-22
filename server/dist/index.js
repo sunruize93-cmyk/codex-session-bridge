@@ -149,7 +149,12 @@ async function request(tool, args, autostart = true) {
       socket.destroy();
       reject(new BridgeError("IPC_TIMEOUT"));
     }, 2e4);
-    socket.once("connect", () => socket.write(JSON.stringify({ tool, args }) + "\n"));
+    socket.once(
+      "connect",
+      () => socket.write(
+        JSON.stringify({ tool: "__session_bridge_rpc_v2", args: { version: 2, tool, args } }) + "\n"
+      )
+    );
     socket.on("data", (d) => {
       output += d;
       if (output.length > 1048576) {
@@ -164,6 +169,11 @@ async function request(tool, args, autostart = true) {
       socket.end();
       try {
         const r = JSON.parse(output.slice(0, end));
+        if (r.protocol_version !== 2)
+          throw new BridgeError(
+            "COORDINATOR_UPGRADE_REQUIRED",
+            "\u65E7\u534F\u8C03\u8FDB\u7A0B\u4E0D\u517C\u5BB9\uFF1B\u8BF7\u5148\u7ED3\u675F\u672A\u51B3\u4EFB\u52A1\u5E76\u5B89\u5168\u91CD\u542F\u672C\u63D2\u4EF6\uFF0C\u4E0D\u4F1A\u56DE\u9000\u65E7\u534F\u8BAE"
+          );
         if (r.ok) resolve(r.data);
         else reject(new BridgeError(r.error));
       } catch (e) {
