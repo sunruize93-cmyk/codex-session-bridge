@@ -2,6 +2,7 @@
 name: session-bridge-setup
 description: 安装、诊断本地小红书与微信会话桥，检查 Chrome 扩展和 macOS 权限。
 ---
+
 用中文。先 bridge_doctor，不自动登录或新建 profile。按 README 安装锁定依赖、构建、运行 scripts/install.mjs。读取不足时仅报告真实缺失：Chrome、Browser Bridge 1.0.26、实际 Python 工作者辅助功能权限。
 
 绑定用户当前选中的已有窗口。浏览器 profile 必须来自 doctor 的真实列表。识别不到账号时，只有用户明确表示已选择当前账号，才使用 user_bound:true，并说明它不是程序已核验身份。草稿与实际发送分开。

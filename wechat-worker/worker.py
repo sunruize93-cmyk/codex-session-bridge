@@ -20,7 +20,31 @@ def main(p):
     trusted = bool(AX.AXIsProcessTrusted())
     apps = AppKit.NSRunningApplication.runningApplicationsWithBundleIdentifier_('com.tencent.xinWeChat')
     if p['action'] == 'doctor':
-        return {'channel': 'wechat_macos', 'os': platform.mac_ver()[0], 'running': bool(apps), 'accessibility': trusted, 'screen_recording': bool(Quartz.CGPreflightScreenCaptureAccess()), 'screenshot_used': False, 'worker': sys.version.split()[0], 'worker_executable': sys.executable}
+        report = {'channel': 'wechat_macos', 'os': platform.mac_ver()[0], 'running': bool(apps), 'accessibility': trusted, 'screen_recording': bool(Quartz.CGPreflightScreenCaptureAccess()), 'screenshot_used': False, 'worker': sys.version.split()[0], 'worker_executable': sys.executable, 'controls_checked': False}
+        if len(apps) == 1:
+            try:
+                import plistlib
+                from pathlib import Path
+                info = plistlib.loads((Path(apps[0].bundleURL().path()) / 'Contents/Info.plist').read_bytes())
+                report['wechat_version'] = info.get('CFBundleShortVersionString')
+                report['wechat_build'] = info.get('CFBundleVersion')
+            except Exception:
+                report['wechat_version'] = 'unknown'
+        if trusted and len(apps) == 1:
+            root = AX.AXUIElementCreateApplication(apps[0].processIdentifier())
+            windows = get(root, 'AXWindows') or []
+            todo = list(windows); seen = set(); identifiers = []; roles = []
+            while todo and len(seen) < 1800:
+                el = todo.pop()
+                key = hash(el)
+                if key in seen:
+                    continue
+                seen.add(key)
+                identifiers.append(get(el, 'AXIdentifier'))
+                roles.append((get(el, 'AXRole'), get(el, 'AXTitle')))
+                todo.extend(get(el, 'AXChildren') or [])
+            report.update({'controls_checked': not todo, 'window_count': len(windows), 'chat_title_accessible': 'big_title_line_h_view' in identifiers, 'messages_accessible': ('AXList', 'Messages') in roles or ('AXList', '消息') in roles, 'editor_accessible': any(i in identifiers for i in ('chat_input', 'message_input', 'input_text_area')), 'stable_account_available': any(i in identifiers for i in ('current_account_id', 'wechat_account_id')), 'stable_recipient_available': 'current_chat_id' in identifiers})
+        return report
     if not trusted:
         fail('OS_PERMISSION_REQUIRED')
     if len(apps) != 1:
